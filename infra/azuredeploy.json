@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.49.2.45890",
-      "templateHash": "2832785580651926994"
+      "templateHash": "10288681985382241198"
     }
   },
   "parameters": {
@@ -51,14 +51,14 @@
       "allowedValues": [
         "demo",
         "reference",
-        "free-trial"
+        "small"
       ]
     },
     "chatModelName": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Chat model. Empty: the profile decides (demo and reference gpt-5.1, free-trial gpt-4.1-mini: a new subscription has no quota for gpt-5.4-nano)."
+        "description": "Chat model. Empty: the profile decides (demo and reference gpt-5.1, small gpt-4.1-mini: a new subscription has no quota for gpt-5.4-nano)."
       }
     },
     "chatModelVersion": {
@@ -88,7 +88,7 @@
         "disabled"
       ],
       "metadata": {
-        "description": "Local (key) authentication on the AIServices account. auto: disabled when the apps use identity (free-trial, reference), enabled when they use the key (demo). Override with enabled to keep keys, for a tool that cannot use Entra ID."
+        "description": "Local (key) authentication on the AIServices account. auto: disabled when the apps use identity (small, reference), enabled when they use the key (demo). Override with enabled to keep keys, for a tool that cannot use Entra ID."
       }
     },
     "openAiAuth": {
@@ -107,7 +107,7 @@
       "type": "bool",
       "defaultValue": true,
       "metadata": {
-        "description": "false skips the Azure OpenAI account, its deployments and role, and the account-key secret. The apps then use externalLlmProvider. Needed where Azure OpenAI is unavailable or quota-zero (a free trial), or to keep a deployment at zero model spend. Not combinable with deployGateway, deployFoundryProject or the reference profile (both need the account)."
+        "description": "false skips the Azure OpenAI account, its deployments and role, and the account-key secret. The apps then use externalLlmProvider. Needed where Azure OpenAI is unavailable or quota-zero (a new subscription often has none), or to keep a deployment at zero model spend. Not combinable with deployGateway, deployFoundryProject or the reference profile (both need the account)."
       }
     },
     "externalLlmProvider": {
@@ -498,7 +498,7 @@
     "profiles": {
       "demo": "[variables('$fxv#0')]",
       "reference": "[variables('$fxv#1')]",
-      "free-trial": "[variables('$fxv#2')]"
+      "small": "[variables('$fxv#2')]"
     },
     "llmProvider": "[if(parameters('deployOpenAi'), 'azure', parameters('externalLlmProvider'))]",
     "modelName": "[if(empty(parameters('chatModelName')), coalesce(tryGet(variables('cfg').openAi, 'chatModelName'), 'gpt-5.1'), parameters('chatModelName'))]",
@@ -575,7 +575,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.49.2.45890",
-              "templateHash": "12673423845663695269"
+              "templateHash": "18438848652757083520"
             }
           },
           "parameters": {
@@ -600,7 +600,7 @@
             "dailyQuotaGb": {
               "type": "string",
               "metadata": {
-                "description": "Daily ingestion cap in GB, as a decimal string because the free-trial profile caps below one GB (the API minimum is 0.023). -1 disables the cap."
+                "description": "Daily ingestion cap in GB, as a decimal string because the small profile caps below one GB (the API minimum is 0.023). -1 disables the cap."
               }
             },
             "retentionDays": {
@@ -814,7 +814,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.49.2.45890",
-              "templateHash": "5394850406374020773"
+              "templateHash": "3361048148367437018"
             }
           },
           "parameters": {
@@ -883,21 +883,21 @@
               "type": "securestring",
               "defaultValue": "",
               "metadata": {
-                "description": "Operator-supplied API key for an OpenAI-compatible endpoint (free-trial path)."
+                "description": "Operator-supplied API key for an OpenAI-compatible endpoint (small path)."
               }
             },
             "storePostgresPassword": {
               "type": "bool",
               "defaultValue": true,
               "metadata": {
-                "description": "Write the postgres-admin-password secret. Nothing reads it (the apps use database-url, which carries the password); the free-trial profile turns it off so the password exists in one secret only."
+                "description": "Write the postgres-admin-password secret. Nothing reads it (the apps use database-url, which carries the password); the small profile turns it off so the password exists in one secret only."
               }
             },
             "storeAuthSecrets": {
               "type": "bool",
               "defaultValue": true,
               "metadata": {
-                "description": "Write a2a-identity-key, oauth-seed-key and auth-signing-key-encryption-key. The first is optional outside token mode (the key falls back to the agent secret) and the other two are read only with AUTH_MODE=oauth; the free-trial profile turns them off unless the auth server is deployed."
+                "description": "Write a2a-identity-key, oauth-seed-key and auth-signing-key-encryption-key. The first is optional outside token mode (the key falls back to the agent secret) and the other two are read only with AUTH_MODE=oauth; the small profile turns them off unless the auth server is deployed."
               }
             },
             "storeLlmApiKey": {
@@ -2947,7 +2947,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.49.2.45890",
-              "templateHash": "174349622026623455"
+              "templateHash": "6287192627815204975"
             }
           },
           "functions": [
@@ -3219,7 +3219,7 @@
               "type": "bool",
               "defaultValue": true,
               "metadata": {
-                "description": "Mount a2a-identity-key, oauth-seed-key and auth-signing-key-encryption-key. False (free-trial) when the auth server is off and the A2A key is the agent secret: those three are not in Key Vault then."
+                "description": "Mount a2a-identity-key, oauth-seed-key and auth-signing-key-encryption-key. False (small) when the auth server is off and the A2A key is the agent secret: those three are not in Key Vault then."
               }
             }
           },
@@ -6885,7 +6885,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.49.2.45890",
-              "templateHash": "6524242338647935991"
+              "templateHash": "15621708661841561545"
             }
           },
           "parameters": {
@@ -6907,7 +6907,7 @@
               "type": "array",
               "defaultValue": [],
               "metadata": {
-                "description": "More actual-cost thresholds (percent), each its own notification. The free-trial profile alerts at 50, 80 and 100."
+                "description": "More actual-cost thresholds (percent), each its own notification. The small profile alerts at 50, 80 and 100."
               }
             },
             "startDate": {

@@ -172,7 +172,7 @@ branch, and only when the user allowed a rewrite.
 
 1. Merge this documentation pass, then cut v1.5.0 from `docs/releasing.md` (the maintainer approves the `release` environment).
 2. Reconcile #97's checklist against `main` (close it or split the remainder) and the other open issues in the table in section 3.
-3. The Azure step, last: dry run, what-if and cost estimate, free-trial deploy, sanity script, measured cost, teardown,
+3. The Azure step, last: dry run, what-if and cost estimate, small deploy, sanity script, measured cost, teardown,
    `verify-clean.sh`; then close #89, #91 and the deploy chapter of #100, and write that chapter.
 4. The .NET 11 move as its own PR series.
 5. Close #103.

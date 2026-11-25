@@ -221,7 +221,7 @@ def _azure_up_dry_run(*extra: str) -> str:
             "--location",
             "centralus",
             "--profile",
-            "free-trial",
+            "small",
             "--image-tag",
             "sha-0123abc",
             "--dry-run",

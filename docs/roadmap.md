@@ -44,7 +44,7 @@ subscription.** [azure-deployment.md](azure-deployment.md) describes the topolog
 assumption a real run has to confirm.
 
 Cost and teardown are part of the deliverable: a reader who cannot cheaply undo a deployment will
-not try it. The run uses a free trial with a 10 USD cap and a key-free model path. It is done when four things hold:
+not try it. The run has a 10 USD cap and a key-free model path. It is done when four things hold:
 
 - The stack comes up and a sanity script passes, with the model reached through a bearer token.
 - No model key exists anywhere in the deployment.

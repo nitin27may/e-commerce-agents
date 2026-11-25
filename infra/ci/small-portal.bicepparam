@@ -4,6 +4,6 @@
 using '../main.bicep'
 
 param environmentName = 'ci-portal'
-param profile = 'free-trial'
+param profile = 'small'
 param imageTag = 'v0.0.0-ci'
 param seedStaffPassword = 'ci-placeholder-staff'

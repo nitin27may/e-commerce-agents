@@ -12,9 +12,9 @@ param openAiLocation string = location
 param principalId string = ''
 @description('Grant the person deploying the roles that need no key: Key Vault Secrets Officer and Cognitive Services OpenAI User (so sanity.sh can read secrets and call the model with its own token). azd passes AZURE_PRINCIPAL_ID and needs no flag. In the portal tick this: it uses deployer().objectId and assumes a user, not a service principal.')
 param grantDeployerAccess bool = false
-@allowed(['demo', 'reference', 'free-trial'])
+@allowed(['demo', 'reference', 'small'])
 param profile string = 'demo'
-@description('Chat model. Empty: the profile decides (demo and reference gpt-5.1, free-trial gpt-4.1-mini: a new subscription has no quota for gpt-5.4-nano).')
+@description('Chat model. Empty: the profile decides (demo and reference gpt-5.1, small gpt-4.1-mini: a new subscription has no quota for gpt-5.4-nano).')
 param chatModelName string = ''
 @description('Version of the chat model. Set it together with chatModelName.')
 param chatModelVersion string = ''
@@ -22,14 +22,14 @@ param deployMiniModel bool = false
 @description('Azure OpenAI API version the apps call. gpt-5.1 tool calling on the Responses API is unverified; see docs/azure-deployment.md.')
 param openAiApiVersion string = '2025-04-01-preview'
 @allowed(['auto', 'enabled', 'disabled'])
-@description('Local (key) authentication on the AIServices account. auto: disabled when the apps use identity (free-trial, reference), enabled when they use the key (demo). Override with enabled to keep keys, for a tool that cannot use Entra ID.')
+@description('Local (key) authentication on the AIServices account. auto: disabled when the apps use identity (small, reference), enabled when they use the key (demo). Override with enabled to keep keys, for a tool that cannot use Entra ID.')
 param openAiLocalAuth string = 'auto'
 @allowed(['auto', 'key', 'identity'])
 @description('auto: the profile decides (demo key, reference identity). key: apps read the account key from Key Vault. identity: Entra ID through the user-assigned identity (needs Azure P3 in the image) and local auth is disabled on the account.')
 param openAiAuth string = 'auto'
 
-// ---- Model provider (free-trial path) ----
-@description('false skips the Azure OpenAI account, its deployments and role, and the account-key secret. The apps then use externalLlmProvider. Needed where Azure OpenAI is unavailable or quota-zero (a free trial), or to keep a deployment at zero model spend. Not combinable with deployGateway, deployFoundryProject or the reference profile (both need the account).')
+// ---- Model provider (small path) ----
+@description('false skips the Azure OpenAI account, its deployments and role, and the account-key secret. The apps then use externalLlmProvider. Needed where Azure OpenAI is unavailable or quota-zero (a new subscription often has none), or to keep a deployment at zero model spend. Not combinable with deployGateway, deployFoundryProject or the reference profile (both need the account).')
 param deployOpenAi bool = true
 @allowed(['openai', 'replay'])
 @description('Only when deployOpenAi is false. openai: an OpenAI-compatible endpoint (externalLlmBaseUrl, key in Key Vault secret llm-api-key). replay: no model is called; chat prompts are answered from recordings only (the released images carry none, so chat reports "not recorded"; everything else works).')
@@ -117,19 +117,19 @@ param deployApps bool = true
 var profiles = {
   demo: loadJsonContent('profiles/demo.json')
   reference: loadJsonContent('profiles/reference.json')
-  'free-trial': loadJsonContent('profiles/free-trial.json')
+  'small': loadJsonContent('profiles/small.json')
 }
 var llmProvider = deployOpenAi ? 'azure' : externalLlmProvider
 var modelName = empty(chatModelName) ? (cfg.openAi.?chatModelName ?? 'gpt-5.1') : chatModelName
 var modelVersion = empty(chatModelVersion) ? (cfg.openAi.?chatModelVersion ?? '2025-11-13') : chatModelVersion
-// The free-trial profile deploys the Foundry project too; it needs the account, so deployOpenAi=false drops it.
+// The small profile deploys the Foundry project too; it needs the account, so deployOpenAi=false drops it.
 var foundryOn = deployOpenAi && (deployFoundryProject || (cfg.?deployFoundryProject ?? false))
 var effectiveChatModel = deployOpenAi ? modelName : externalLlmModel
 var cfg = profiles[profile]
 var effectiveOpenAiAuth = openAiAuth == 'auto' ? cfg.openAiAuth : openAiAuth
 var deployerObjectId = !empty(principalId) ? principalId : (grantDeployerAccess ? deployer().objectId : '')
 var disableOpenAiLocalAuth = openAiLocalAuth == 'auto' ? effectiveOpenAiAuth == 'identity' : openAiLocalAuth == 'disabled'
-// The free-trial profile drops secrets nothing reads (see modules/keyvault.bicep) and says so here.
+// The small profile drops secrets nothing reads (see modules/keyvault.bicep) and says so here.
 var keepAuthSecrets = !(cfg.?minimalSecrets ?? false) || deployAuthServer
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = {

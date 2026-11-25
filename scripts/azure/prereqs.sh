@@ -2,7 +2,7 @@
 # Azure deployment prerequisites. Read-mostly: it installs the `containerapp` CLI extension and
 # registers missing resource providers (both idempotent), nothing else.
 #
-#   scripts/azure/prereqs.sh [--location eastus2] [--openai-location eastus2] [--profile demo|reference|free-trial]
+#   scripts/azure/prereqs.sh [--location eastus2] [--openai-location eastus2] [--profile demo|reference|small]
 #                            [--no-openai] [--dry-run]
 #
 # Checks, in order: az / azd / bicep floor versions, jq and curl, az login, the containerapp
@@ -94,8 +94,8 @@ run az extension add --name containerapp --upgrade --only-show-errors
 providers=("${PROVIDERS[@]}")
 case "$PROFILE" in reference) providers+=(Microsoft.Cache) ;; esac
 [ "$(env_get DEPLOY_GATEWAY)" != true ] || providers+=(Microsoft.ApiManagement)
-# The free-trial profile has no registry and no VNet (and, without Azure OpenAI, no Cognitive Services): register only what it uses.
-if [ "$PROFILE" = free-trial ]; then
+# The small profile has no registry and no VNet (and, without Azure OpenAI, no Cognitive Services): register only what it uses.
+if [ "$PROFILE" = small ]; then
     drop=" Microsoft.ContainerRegistry Microsoft.Network "
     [ "$DEPLOY_OPENAI" != false ] || drop="$drop Microsoft.CognitiveServices "
     kept=()
@@ -181,7 +181,7 @@ check_postgres_sku "$LOCATION" "$sku"
 if [ "$DEPLOY_OPENAI" = false ]; then
     log "DEPLOY_OPENAI=false: no Azure OpenAI account, skipping model and quota checks"
 else
-    # The profile names its own default model (free-trial: gpt-4.1-mini, which has quota on a new subscription); an explicit AZURE_CHAT_MODEL wins.
+    # The profile names its own default model (small: gpt-4.1-mini, which has quota on a new subscription); an explicit AZURE_CHAT_MODEL wins.
     default_model="$(jq -r '.openAi.chatModelName // "gpt-5.1"' "$profile_file")"
     default_version="$(jq -r '.openAi.chatModelVersion // "2025-11-13"' "$profile_file")"
     check_model "$OPENAI_LOCATION" "${AZURE_CHAT_MODEL:-$default_model}" "${AZURE_CHAT_MODEL_VERSION:-$default_version}" "$capacity" "$embedding_capacity"

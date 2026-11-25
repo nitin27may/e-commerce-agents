@@ -15,7 +15,7 @@
 #      order allows it) is paused, appears in the staff inbox, is decided by a reviewer of the right role, and the
 #      run timeline shows it finished.
 # Steps 5 and 6 need the stack to have a model (5) and are skipped by --quick. --no-model runs everything except step 5, for
-# a stack on LLM_PROVIDER=replay (the free-trial path); step 6 is meant to need no model but is unverified under replay.
+# a stack on LLM_PROVIDER=replay (the small path); step 6 is meant to need no model but is unverified under replay.
 #
 # Environment: FRONTEND_URL, E2E_STAFF_PASSWORD (admin, support), SMOKE_CUSTOMER_PASSWORD (default customer123),
 # AZURE_RESOURCE_GROUP, DB_INIT_JOB_NAME, SMOKE_FIRST_FRAME_SECONDS (15), SMOKE_MIN_FRAMES (10), SMOKE_WAIT_SECONDS (300).

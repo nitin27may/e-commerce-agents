@@ -4,7 +4,7 @@ param logAnalyticsName string
 param appInsightsName string
 param location string
 param tags object
-@description('Daily ingestion cap in GB, as a decimal string because the free-trial profile caps below one GB (the API minimum is 0.023). -1 disables the cap.')
+@description('Daily ingestion cap in GB, as a decimal string because the small profile caps below one GB (the API minimum is 0.023). -1 disables the cap.')
 param dailyQuotaGb string
 param retentionDays int
 

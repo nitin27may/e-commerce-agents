@@ -16,7 +16,7 @@
 #          route to a specialist, the specialist must call a tool (which reads the database), and text must come back.
 #   eval   the eval harness over http (--target http) against the deployed orchestrator, on the first N cases of
 #          evals/datasets/orchestrator_routing.json (default 3, at most 5; a few thousand tokens each, about 0.01 USD at
-#          the free-trial model's price, well inside a 0.10 USD cap). PASS when no case errored and every case routed to a
+#          the small model's price, well inside a 0.10 USD cap). PASS when no case errored and every case routed to a
 #          specialist; the average groundedness score is printed and recorded, not graded.
 #
 # This script creates and deletes NOTHING in Azure and never tears anything down. What it does write is rows in the

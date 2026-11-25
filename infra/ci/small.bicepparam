@@ -4,7 +4,7 @@ using '../main.bicep'
 
 param environmentName = 'ci-freetrial'
 param location = 'eastus2'
-param profile = 'free-trial'
+param profile = 'small'
 param postgresAdminPassword = 'ci-placeholder'
 param jwtSecret = 'ci-placeholder'
 param agentSharedSecret = 'ci-placeholder'

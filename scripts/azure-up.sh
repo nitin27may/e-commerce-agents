@@ -2,7 +2,7 @@
 # One command to an Azure deployment: prerequisites, an azd environment, `azd provision` (the hooks do the rest).
 #
 #   scripts/azure-up.sh                      # every value below has a default; the flags (or ECA_* variables) override them
-#   scripts/azure-up.sh [--env demo1] [--location eastus2] [--image-tag sha-0123abc|v1.5.0] [--profile free-trial|demo|reference]
+#   scripts/azure-up.sh [--env demo1] [--location eastus2] [--image-tag sha-0123abc|v1.5.0] [--profile small|demo|reference]
 #                       [--chat-model gpt-4.1-mini] [--chat-model-version 2025-04-14] [--generated-passwords] [--no-verify]
 #                       [--llm replay|openai [--llm-base-url https://host/v1] [--llm-model gpt-4.1-mini]]
 #                       [--openai-location eastus2] [--public-open] [--allowed-ips 198.51.100.0/24,...] [--demo-passwords] [--verify]
@@ -12,7 +12,7 @@
 #   env          eca-<6 hex of the subscription id> (stable, so a re-run updates the same environment)
 #   location     the first of centralus westus3 northcentralus canadacentral eastus2 eastus westus2 southcentralus where
 #                PostgreSQL Standard_B1ms is offered to the subscription
-#   profile      free-trial (gpt-4.1-mini, scale to zero; the demo and reference profiles are about 4 to 12 USD a day or more)
+#   profile      small (gpt-4.1-mini, scale to zero; the demo and reference profiles are about 4 to 12 USD a day or more)
 #   image tag    sha-<7> of the newest main commit whose images are published
 #   passwords    the documented demo accounts (admin123 and so on); --generated-passwords generates one for the staff accounts.
 #                Honoured only while the frontend is IP-restricted, which is the default
@@ -21,8 +21,8 @@
 # It costs real money while it is up: scripts/azure-down.sh removes everything. Not verified against a real
 # subscription yet; see docs/azure-deployment.md.
 #
-# --profile free-trial is the 5 USD budget profile (docs/azure-deployment-sequence.md): scale to zero, one replica at most, no
-# registry, a 0.1 GB/day log cap. --llm replay|openai skips the Azure OpenAI account (a trial often has no quota for it):
+# --profile small (the default) is the cheapest profile, a 10 USD budget (docs/azure-deployment-stages.md): scale to zero, one replica at most, no
+# registry, a 0.1 GB/day log cap. --llm replay|openai skips the Azure OpenAI account (a new subscription often has no quota for it):
 # replay calls no model; openai uses an OpenAI-compatible endpoint whose key is read from the LLM_API_KEY environment
 # variable (never an argument) and stored in Key Vault as llm-api-key.
 #
@@ -48,7 +48,7 @@ stage() {
 
 # Every value has a default, so `scripts/azure-up.sh` alone works. Each is overridden by its flag, or by the ECA_* environment
 # variable named here (a flag wins over the variable, the variable over the default).
-ENV_NAME="${ECA_ENV:-}" LOCATION="${ECA_LOCATION:-}" OPENAI_LOCATION="${ECA_OPENAI_LOCATION:-}" PROFILE="${ECA_PROFILE:-free-trial}"
+ENV_NAME="${ECA_ENV:-}" LOCATION="${ECA_LOCATION:-}" OPENAI_LOCATION="${ECA_OPENAI_LOCATION:-}" PROFILE="${ECA_PROFILE:-small}"
 IMAGE_TAG_ARG="${ECA_IMAGE_TAG:-}" PUBLIC_ACCESS_ARG="restricted"
 ALLOWED_IPS_ARG="" AUTH_SERVER=false MCP=false STACK=python IMAGE_SOURCE_ARG=auto BUILD_FROM_SOURCE=false
 LLM="" LLM_BASE_URL="" LLM_MODEL="" PREVIEW=false DEMO_PASSWORDS="${ECA_DEMO_PASSWORDS:-true}" VERIFY="${ECA_VERIFY:-true}"
@@ -137,7 +137,7 @@ if [ -z "$LOCATION" ]; then
 fi
 [[ "$ENV_NAME" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "--env must be lowercase letters, digits and dashes (max 31)"
 
-case "$PROFILE" in demo|reference|free-trial) ;; *) die "--profile must be demo, reference or free-trial" ;; esac
+case "$PROFILE" in demo|reference|small) ;; *) die "--profile must be demo, reference or small" ;; esac
 case "$LLM" in
     "") ;;
     replay) ;;
@@ -148,7 +148,7 @@ case "$LLM" in
     *) die "--llm must be replay or openai" ;;
 esac
 [ -z "$LLM" ] || [ "$STACK" = python ] || die "--llm is Python stack only"
-[ "$PROFILE" != reference ] || [ -z "$LLM" ] || die "--llm needs no Azure OpenAI account, which the reference profile's private endpoints expect; use demo or free-trial"
+[ "$PROFILE" != reference ] || [ -z "$LLM" ] || die "--llm needs no Azure OpenAI account, which the reference profile's private endpoints expect; use demo or small"
 case "$STACK" in python|dotnet) ;; *) die "--stack must be python or dotnet" ;; esac
 case "$IMAGE_SOURCE_ARG" in auto|ghcr|acr) ;; *) die "--image-source must be ghcr or acr" ;; esac
 # Building from source needs a registry to put the result in.
@@ -177,7 +177,7 @@ if [ -z "$image_tag" ]; then
         [ -z "$image_tag" ] || { log "no --image-tag: using $image_tag, the newest main commit whose images are published"; DEFAULTED+=("image-tag=$image_tag"); }
     fi
 fi
-if [ -z "$image_tag" ] && [ "$PROFILE" = free-trial ]; then
+if [ -z "$image_tag" ] && [ "$PROFILE" = small ]; then
     # The newest release tag lags main; a first trial run must name exactly what it pulls.
     die "could not find a published image for any of the last 25 main commits (is ghcr.io reachable?). Pass --image-tag sha-<7> or vX.Y.Z"
 fi
