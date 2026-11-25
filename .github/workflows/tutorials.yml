@@ -152,7 +152,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "11.0.x"
 
       # 62 tutorial .csproj files across 31 chapters. Until #20 *no CI job built
       # any of them* — the .NET half of the series shipped unverified while the
@@ -181,7 +181,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "11.0.x"
 
       # Kept separate from the build job so a compile break and a test failure
       # are distinguishable at a glance.

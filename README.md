@@ -4,7 +4,7 @@
 [![Build Images](https://github.com/nitin27may/e-commerce-agents/actions/workflows/build-images.yml/badge.svg)](https://github.com/nitin27may/e-commerce-agents/actions/workflows/build-images.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB.svg)](https://python.org)
-[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg)](https://dotnet.microsoft.com)
+[![.NET 11](https://img.shields.io/badge/.NET-11-512BD4.svg)](https://dotnet.microsoft.com)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-000000.svg)](https://nextjs.org)
 [![MAF 1.26.0](https://img.shields.io/badge/Microsoft%20Agent%20Framework-1.26.0-5E5DF0.svg)](https://github.com/microsoft/agent-framework)
 [![PostgreSQL + pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg)](https://github.com/pgvector/pgvector)
@@ -110,7 +110,7 @@ Copy-Item .env.minimal .env    # then set OPENAI_API_KEY in .env
 everything above works unchanged inside it.
 
 **In the browser, no install.** The Codespaces badge above opens a ready environment (Python 3.12 + `uv`, Node 26 +
-`pnpm`, the .NET 10 SDK, Docker-in-Docker) and installs the dependencies ([`.devcontainer/`](./.devcontainer/)).
+`pnpm`, the .NET 11 SDK, Docker-in-Docker) and installs the dependencies ([`.devcontainer/`](./.devcontainer/)).
 The creation screen asks for optional model-key secrets (`OPENAI_API_KEY`, or the Azure OpenAI endpoint, key and
 deployment, or an OpenAI-compatible `LLM_BASE_URL`); the provider is chosen from whichever you supply. With none,
 it runs key-free on recorded responses: the tutorials, Python tests and keyless evals work, and chat says a prompt
@@ -308,7 +308,7 @@ Contributor-facing docs stay in the repo rather than on the site:
 | Agent framework | [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) v1 — Python (`agent-framework-core`) **and** .NET (`Microsoft.Agents.AI`) |
 | Agent communication | A2A 1.0 JSON-RPC (`/a2a/v1`, agent card at `/.well-known/agent-card.json`) and the legacy `/message:send` wire, on both stacks ([a2a.md](docs/a2a.md)), plus optional MCP for product and inventory data (flag-gated, `MCP_ENABLED`) |
 | LLM | OpenAI / Azure OpenAI, or any OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter) |
-| Backend | Python 3.12 + FastAPI · .NET 10 + ASP.NET Core |
+| Backend | Python 3.12 + FastAPI · .NET 11 + ASP.NET Core |
 | Data | PostgreSQL 16 + pgvector · Redis 8 |
 | Frontend | Next.js 16, React 19, Tailwind 4, shadcn/ui |
 | Telemetry | OpenTelemetry → .NET Aspire Dashboard |

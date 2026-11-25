@@ -37,7 +37,7 @@ The series runs the same examples in Python and .NET, and ends with the full app
 | You want to run | You need |
 |-----------------|----------|
 | Python side of the chapters | `uv`, Python 3.12+ |
-| .NET side of the chapters | plus the .NET 10 SDK (the chapter projects target `net10.0`) |
+| .NET side of the chapters | plus the .NET 11 SDK (the chapter projects target `net11.0`) |
 | The full application | plus Docker with Compose v2, Node 26+ and pnpm |
 
 An API key is optional throughout. Without one, the chapters replay recorded model responses.
@@ -101,17 +101,17 @@ uv python install 3.12
 
 The repo uses `uv`, not `pip` or `poetry`. It creates the virtual environment for you.
 
-### .NET SDK (9 or 10)
+### .NET SDK (11)
 
 - macOS: `brew install --cask dotnet-sdk`
 - Ubuntu: follow [Microsoft's official instructions](https://learn.microsoft.com/en-us/dotnet/core/install/linux-ubuntu).
 - Windows: download from [dotnet.microsoft.com](https://dotnet.microsoft.com/download).
 
 ```bash
-dotnet --list-sdks    # expect: 9.0.x or 10.0.x
+dotnet --list-sdks    # expect: 11.0.x
 ```
 
-Install 10 if you plan to run the .NET chapters: the chapter projects and `agents/dotnet/ECommerceAgents.sln` target `net10.0`. `verify-setup.sh` accepts either 9 or 10.
+Install 11 if you plan to run the .NET chapters: the chapter projects and `agents/dotnet/ECommerceAgents.sln` target `net11.0`. `verify-setup.sh` accepts 11 or later.
 
 ### Docker + Compose v2
 
@@ -222,7 +222,7 @@ It checks what the full application needs, which is more than the chapters need.
 In order, it checks:
 
 - `uv` is present, with Python 3.12+
-- a .NET SDK (9 or 10)
+- a .NET SDK (11 or later)
 - Docker, Docker Compose v2, Node 26+ and pnpm
 - `.env` exists and has a real (non-placeholder) key for the `LLM_PROVIDER` you picked
 - the expected top-level folders exist (`tutorials/`, `agents/python/`, `agents/dotnet/ECommerceAgents.sln`, `web/`, both compose files)
