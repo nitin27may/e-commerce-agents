@@ -4,7 +4,7 @@
 #
 #   scripts/azure-down.sh --env demo1 [--dry-run] [--purge-only] [--keep-local]
 #
-# What a resource group delete does NOT remove, and what this script does about each (docs/azure-deployment-sequence.md):
+# What a resource group delete does NOT remove, and what this script does about each (docs/azure-deployment-stages.md):
 #   1. the Log Analytics workspace: soft-deleted for 14 days, which blocks the same name   -> force-deleted first
 #   2. the Key Vault: soft-deleted, holds its name (purge protection, reference profile, cannot be purged) -> purged
 #   3. the Foundry / AIServices account, with its project and connection: soft-deleted      -> purged

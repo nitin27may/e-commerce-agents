@@ -1,51 +1,16 @@
 ---
-title: Azure deployment sequence (free trial)
+title: Azure deployment stages, costs and teardown
 ---
 
-# Azure deployment (free trial): one command
+# Azure deployment: stages, costs and teardown
 
-`scripts/azure-up.sh`, with no arguments, takes an empty Azure subscription to a running, tested copy of the demo and prints the URL. This page is what that command does, in order, what each stage costs, what it was measured to do, and how to take everything down again.
-
-**Status: deployed and tested from a clean subscription.** The last clean run, with no arguments, provisioned in 7 minutes 32 seconds and printed the summary banner (URL, accounts, what to try) at 10 minutes 30 seconds. The smoke test passed (product cards from the real model, the first stream frame in 5.3 seconds, a return paused for approval, approved and executed), and so did the database, chat-turn and direct model checks. The teardown was run and verified clean the same way ([teardown](#stage-13-teardown-explicit-separate-last)).
+What `scripts/azure-up.sh` does stage by stage, what the default `small` profile contains, what each stage costs, how to run any stage by hand, and how to take everything down. The short version is [Deploy to Azure](azure-deployment.md); the defaults and flags are in its [options table](azure-deployment.md#options).
 
 `<subscription-id>`, `<env>` and `<region>` below are placeholders. Do not paste your own account name, tenant, subscription id or resource group into the repo, an issue or a commit.
 
-## The command
+## What the `small` profile deploys
 
-```bash
-az login && azd auth login
-scripts/azure-up.sh                  # PowerShell: not supported for this profile; use bash (macOS, Linux, WSL)
-# test the URL it prints, then:
-scripts/azure-down.sh --env <env>    # the env name is printed in the banner
-```
-
-It shows numbered progress (`[1/5]` checks, `[2/5]` secrets, `[3/5]` provision, `[4/5]` smoke test, `[5/5]` done) with elapsed time, and ends with a banner that holds the frontend URL, the accounts, two prompts to try, and the verify and teardown commands. **Every value has a default**, printed on a `using:` line before anything is created, and each can be overridden by a flag or an environment variable (flag, then variable, then default):
-
-| Setting | Flag | Variable | Default |
-|---|---|---|---|
-| Environment name (names `rg-<env>`) | `--env` | `ECA_ENV` | `eca-` plus 6 hex characters of the subscription id, so a re-run updates the same environment |
-| Region | `--location` | `ECA_LOCATION` | the first of `centralus`, `westus3`, `northcentralus`, `canadacentral`, `eastus2`, `eastus`, `westus2`, `southcentralus` where PostgreSQL `Standard_B1ms` is offered to the subscription |
-| Model account region | `--openai-location` | `ECA_OPENAI_LOCATION` | the same region |
-| Profile | `--profile` | `ECA_PROFILE` | `free-trial` (`demo` and `reference` are larger) |
-| Image tag | `--image-tag` | `ECA_IMAGE_TAG` | `sha-<7>` of the newest of the last 25 `main` commits whose images exist on GHCR (checked anonymously) |
-| Chat model | `--chat-model`, `--chat-model-version` | none | `gpt-4.1-mini` `2025-04-14` (from the profile) |
-| Seeded accounts | `--generated-passwords` | `ECA_DEMO_PASSWORDS` | the documented demo accounts; the flag generates one password for the staff accounts instead |
-| Sanity check at the end | `--no-verify` | `ECA_VERIFY` | on |
-| No Azure OpenAI quota | `--llm replay` or `--llm openai --llm-base-url ... --llm-model ...` | none | off; the key comes from `LLM_API_KEY`, never an argument |
-| Frontend access | `--public-open`, `--allowed-ips a,b` | none | only this machine's public IP |
-
-The accounts are the documented seed accounts (`admin.demo@gmail.com` / `admin123`, `support.demo@gmail.com` / `support123`, `seller.demo@gmail.com` / `seller123`, `power.demo@gmail.com` / `power123`, the customers with `customer123`; the full list is in [the demo guide](demo-guide.md)). They are seeded with their documented passwords only while the frontend is IP-restricted, which is the default: the template ignores the setting when the frontend is open to the internet, and `--public-open` with the demo passwords falls back to a generated staff password. `--dry-run` prints every command and changes nothing; `--preview` runs a what-if and creates nothing.
-
-## What it does not need from you
-
-- **No model key.** The apps call the model with their managed identity (see [Keyless](#keyless-which-credentials-remain)).
-- **No Docker.** The images are public on GHCR.
-- **No Entra app registration**, no service principal, no federated credential.
-- **No secret to invent.** Every secret is generated on the first run, before the first provision, and reused afterwards.
-
-## What the free-trial profile deploys
-
-`DEPLOY_PROFILE=free-trial` (`infra/profiles/free-trial.json`) is the demo topology shrunk to the cheapest shape the template can express:
+`DEPLOY_PROFILE=small` (`infra/profiles/small.json`) is the demo topology shrunk to the cheapest shape the template can express:
 
 | Piece | Free-trial setting | Why |
 |---|---|---|
@@ -88,7 +53,7 @@ flowchart LR
     classDef infra fill:#6b7280,stroke:#4b5563,color:#ffffff
 ```
 
-## The model provider on a free trial
+## The model provider
 
 The profile deploys the Foundry resources by default: the AIServices account, a Foundry project and two model deployments. The chat model is `gpt-4.1-mini` (GlobalStandard). It is in the `Legacy` lifecycle but is still deployable, and it was the cheapest chat model a new pay-as-you-go subscription had quota for: `gpt-5.4-nano` had zero quota there, and the quota row is spelled `gpt4.1-mini` by Azure (the preflight accepts both spellings).
 
@@ -241,7 +206,7 @@ jq --version && curl --version | head -n 1
 
 ### Stage 3. Provider registration (you run it)
 
-A new subscription has the providers unregistered. The free-trial path needs these seven (drop `Microsoft.CognitiveServices` only with `--llm`, which skips the Foundry account):
+A new subscription has the providers unregistered. The small path needs these seven (drop `Microsoft.CognitiveServices` only with `--llm`, which skips the Foundry account):
 
 ```bash
 az provider register --namespace Microsoft.App
@@ -255,7 +220,7 @@ az provider register --namespace Microsoft.CognitiveServices      # the Foundry 
 az extension add --name containerapp --upgrade --only-show-errors
 ```
 
-`Microsoft.Authorization` and `Microsoft.Consumption` (the budget) were already registered on the subscription the clean run used; check yours. `Microsoft.ContainerRegistry` and `Microsoft.Network` are **not** needed by this profile (`scripts/azure-up.sh --profile free-trial` skips them).
+`Microsoft.Authorization` and `Microsoft.Consumption` (the budget) were already registered on the subscription the clean run used; check yours. `Microsoft.ContainerRegistry` and `Microsoft.Network` are **not** needed by this profile (`scripts/azure-up.sh --profile small` skips them).
 
 - **Creates:** provider registrations on the subscription. Free.
 - **Time:** 1 to 10 minutes each (estimate; they run in parallel).
@@ -284,7 +249,7 @@ az cognitiveservices usage list --location eastus2 -o table      # after stage 3
 ### Stage 5. Dry run (prints, runs nothing)
 
 ```bash
-scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --image-tag sha-<7> --dry-run
+scripts/azure-up.sh --env <env> --location eastus2 --profile small --image-tag sha-<7> --dry-run
 ```
 
 - **Creates:** nothing; every `az` and `azd` command is printed. **Cost:** none. **Time:** seconds.
@@ -295,12 +260,12 @@ scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --image-
 ### Stage 6. What-if
 
 ```bash
-scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --image-tag sha-<7> --preview
+scripts/azure-up.sh --env <env> --location eastus2 --profile small --image-tag sha-<7> --preview
 ```
 
 This runs the prerequisite checks (registering any provider you skipped), creates the **local** azd environment and generates the secrets into `.azure/<env>/.env`, then `azd provision --preview`, which is a what-if. It creates nothing in Azure. Expect about 34 creates: the resource group, Log Analytics, Application Insights, the identity, Key Vault with four secrets, Postgres with its configuration, database and firewall rule, the environment, nine container apps, the job and the budget. Role assignments show as "Unsupported" (their names are computed at deployment time); that is normal.
 
-If you would rather read it without azd, `az deployment sub what-if --location eastus2 --parameters infra/ci/free-trial-replay.bicepparam` shows the same shape with CI placeholders, and `az deployment sub validate` with the same arguments checks the template against ARM. Both were run in the rehearsal and succeeded.
+If you would rather read it without azd, `az deployment sub what-if --location eastus2 --parameters infra/ci/small-replay.bicepparam` shows the same shape with CI placeholders, and `az deployment sub validate` with the same arguments checks the template against ARM. Both were run in the rehearsal and succeeded.
 
 - **Creates:** local files only. **Cost:** none. **Time:** 1 to 3 minutes (estimate).
 - **Verify:** the command exits 0 and the summary has no `Delete` or `Modify` lines for a fresh environment.
@@ -313,10 +278,10 @@ If you would rather read it without azd, `az deployment sub what-if --location e
 # Default: Foundry with gpt-4.1-mini. No Azure OpenAI quota? add --llm replay (no model) or, for your own endpoint:
 #   export LLM_API_KEY=...           (the key is never an argument)
 #   --llm openai --llm-base-url https://<host>/v1 --llm-model <model>
-scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --image-tag sha-<7>
+scripts/azure-up.sh --env <env> --location eastus2 --profile small --image-tag sha-<7>
 ```
 
-- **Creates:** everything in [What the profile deploys](#what-the-free-trial-profile-deploys), then runs the `postprovision` hook (stages 8 to 10). The frontend answers only your public IP.
+- **Creates:** everything in [What the profile deploys](#what-the-small-profile-deploys), then runs the `postprovision` hook (stages 8 to 10). The frontend answers only your public IP.
 - **Cost:** about 0.046 USD per hour from the moment Postgres exists (see the estimate). **Time:** 15 to 30 minutes (estimate; Postgres dominates).
 - **Verify:**
   ```bash
@@ -326,7 +291,7 @@ scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --image-
   ```
   `azd env get-value FRONTEND_URL` prints the URL.
 - **Roll back / stop spending:** `scripts/azure-down.sh --env <env>` (stage 13, after the sanity check and your review). If provisioning stops half way, the resources that exist still bill: run the teardown before debugging for long.
-- **Failure modes:** [#10](troubleshooting.md#azure-deployment-first-run-failure-catalogue) (Key Vault role propagation, retried once after 60 s), [#12](troubleshooting.md#azure-deployment-first-run-failure-catalogue), [#6](troubleshooting.md#azure-deployment-first-run-failure-catalogue), [#7](troubleshooting.md#azure-deployment-first-run-failure-catalogue), [#8](troubleshooting.md#azure-deployment-first-run-failure-catalogue), and the free-trial rows 39 to 44 there. A trial's cap on Container Apps environments or cores shows as a quota error from `Microsoft.App`; it cannot be read in advance (see below).
+- **Failure modes:** [#10](troubleshooting.md#azure-deployment-first-run-failure-catalogue) (Key Vault role propagation, retried once after 60 s), [#12](troubleshooting.md#azure-deployment-first-run-failure-catalogue), [#6](troubleshooting.md#azure-deployment-first-run-failure-catalogue), [#7](troubleshooting.md#azure-deployment-first-run-failure-catalogue), [#8](troubleshooting.md#azure-deployment-first-run-failure-catalogue), and the small rows 39 to 44 there. A trial's cap on Container Apps environments or cores shows as a quota error from `Microsoft.App`; it cannot be read in advance (see below).
 
 ### Stage 8. Database bootstrap (`job-db-init`)
 
@@ -429,7 +394,7 @@ scripts/azure/verify-clean.sh --env <env>     # read only; run it again any time
 | Class | Why it survives | What removes it | How `verify-clean.sh` shows it |
 |---|---|---|---|
 | Log Analytics workspace | soft-deleted for 14 days, keeps its name, so redeploying the same environment name fails | `az monitor log-analytics workspace delete --force true` before the group goes | `workspace` |
-| Key Vault | soft-deleted; the name is held until purged. The demo and free-trial profiles have no purge protection, so it can be purged at once; the reference profile turns purge protection on, which cannot be purged early (90 days, not billed, use a new `--env`) | `az keyvault purge` | `vault` (a purge-protected one is reported with its date) |
+| Key Vault | soft-deleted; the name is held until purged. The demo and small profiles have no purge protection, so it can be purged at once; the reference profile turns purge protection on, which cannot be purged early (90 days, not billed, use a new `--env`) | `az keyvault purge` | `vault` (a purge-protected one is reported with its date) |
 | Foundry / AIServices account, its project and connection | the account is soft-deleted and holds its name; the project and the App Insights connection live inside it and go with it | `az cognitiveservices account purge` | `account` |
 | API Management | soft-deleted, only when `deployGateway` was on | `az apim deletedservice purge` | `apim` |
 | Subscription deployment records | `Microsoft.Resources/deployments` at subscription scope are not in the group (no cost) | `az deployment sub delete`, for names `<env>`, `<env>-...` or outputs naming `rg-<env>` | `deployments` |
@@ -438,7 +403,7 @@ scripts/azure/verify-clean.sh --env <env>     # read only; run it again any time
 | Local azd state | `.azure/<env>` on your machine, secrets in clear text | `azure-down.sh` removes it last | `local` |
 | Resource provider registrations | not environment state, free | left alone (`az provider unregister` if you want) | not checked |
 
-No Entra app registration, service principal or federated credential is created by anything in this repo's deployment, so there is none to delete ([why](azure-deployment.md#do-you-need-an-entra-app-registration)).
+No Entra app registration, service principal or federated credential is created by anything in this repo's deployment, so there is none to delete ([why](azure-deployment-reference.md#do-you-need-an-entra-app-registration)).
 
 - **Cost:** stops every charge. **Time:** 5 to 20 minutes (estimate; the group delete dominates).
 - **Closing proof:** `verify-clean.sh` prints one line per class and ends with `verify-clean: every class is CLEAN for '<env>'` and exit code 0:
@@ -459,7 +424,7 @@ No Entra app registration, service principal or federated credential is created 
 
 ## Keyless: which credentials remain
 
-The free-trial profile uses managed identity wherever the codebase supports it. The apps and the db-init job run as one user-assigned identity:
+The small profile uses managed identity wherever the codebase supports it. The apps and the db-init job run as one user-assigned identity:
 
 | Call | How it authenticates |
 |---|---|
@@ -471,11 +436,11 @@ The free-trial profile uses managed identity wherever the codebase supports it. 
 | You to the vault | Key Vault Secrets Officer for the deployer, by role |
 | App registrations | none |
 
-**Override.** `openAiLocalAuth` (azd `AZURE_OPENAI_LOCAL_AUTH`) is `auto` by default: disabled when the apps use identity (free-trial, reference), enabled for the key-based demo profile. `enabled` keeps keys on the account for a tool that cannot use Entra ID.
+**Override.** `openAiLocalAuth` (azd `AZURE_OPENAI_LOCAL_AUTH`) is `auto` by default: disabled when the apps use identity (small, reference), enabled for the key-based demo profile. `enabled` keeps keys on the account for a tool that cannot use Entra ID.
 
-**Postgres stays on a password.** Entra authentication exists on Flexible Server and `asyncpg` accepts a callable password, but this codebase builds its connections from one static `DATABASE_URL` in at least eight Python entry points (`shared/db.py`, `shared/readiness.py`, `shared/checkpoint_storage.py`, the outbox worker, both MCP servers, `auth_server`, the migrate, seed and db-init scripts) and the .NET `DatabasePool`, and the migrations would have to run as an Entra role. That is a code change across both stacks and a new image release, and the pinned `v1.4.0` images cannot do it. So the admin password remains, as a generated secret that is never shown: the template generates it (azd: the preprovision hook; portal: a parameter default), it is stored only inside the Key Vault secret `database-url` (the free-trial profile drops the separate `postgres-admin-password` copy, which nothing read), and the apps read it by Key Vault reference. azd also keeps it in `.azure/<env>/.env`, in clear text, until teardown removes that directory.
+**Postgres stays on a password.** Entra authentication exists on Flexible Server and `asyncpg` accepts a callable password, but this codebase builds its connections from one static `DATABASE_URL` in at least eight Python entry points (`shared/db.py`, `shared/readiness.py`, `shared/checkpoint_storage.py`, the outbox worker, both MCP servers, `auth_server`, the migrate, seed and db-init scripts) and the .NET `DatabasePool`, and the migrations would have to run as an Entra role. That is a code change across both stacks and a new image release, and the pinned `v1.4.0` images cannot do it. So the admin password remains, as a generated secret that is never shown: the template generates it (azd: the preprovision hook; portal: a parameter default), it is stored only inside the Key Vault secret `database-url` (the small profile drops the separate `postgres-admin-password` copy, which nothing read), and the apps read it by Key Vault reference. azd also keeps it in `.azure/<env>/.env`, in clear text, until teardown removes that directory.
 
-Every secret the free-trial deployment still contains, and whether it can go:
+Every secret the small deployment still contains, and whether it can go:
 
 | Secret (Key Vault name) | What it protects | Remove or derive? |
 |---|---|---|
@@ -493,7 +458,7 @@ Platform-held keys outside the repo and the vault: the Container Apps environmen
 
 ## The portal button instead of azure-up.sh
 
-`infra/azuredeploy.json` is the compiled template behind the README's Deploy to Azure button ([how it handles the azd hooks](azure-deployment.md#deploy-to-azure-button)). For this profile: open the button, choose the region `eastus2`, set `profile` to `free-trial`, `environmentName`, `imageTag` `sha-<7>` (the main commit, see the runbook), `seedStaffPassword` (12 characters or more) and your public address in `deployerIp`; after the deployment run the `DB_INIT_START_COMMAND` output, then stages 9, 10 and 12 (`sanity.sh --resource-group rg-<env>` with `E2E_STAFF_PASSWORD` set). It checks nothing in advance (stages 3 to 6 do not happen), so a quota or region problem shows as a failed deployment with partial resources: delete the resource group. The button is unverified.
+`infra/azuredeploy.json` is the compiled template behind the README's Deploy to Azure button ([how it handles the azd hooks](azure-deployment-reference.md#deploy-to-azure-button)). For this profile: open the button, choose the region `eastus2`, set `profile` to `small`, `environmentName`, `imageTag` `sha-<7>` (the main commit, see the runbook), `seedStaffPassword` (12 characters or more) and your public address in `deployerIp`; after the deployment run the `DB_INIT_START_COMMAND` output, then stages 9, 10 and 12 (`sanity.sh --resource-group rg-<env>` with `E2E_STAFF_PASSWORD` set). It checks nothing in advance (stages 3 to 6 do not happen), so a quota or region problem shows as a failed deployment with partial resources: delete the resource group. The button is unverified.
 
 ## Findings from the real runs
 
@@ -519,4 +484,4 @@ What the first real deployments found, all fixed in the template or the scripts 
 - **Generative UI cards** do not render in the deployed frontend yet; chat answers and product cards do.
 - **Cold start.** With every HTTP app at zero replicas, the first request after idle can exceed the 60 second A2A timeout; the second succeeds.
 - **The free grants** (account credit, 12 month Postgres, Log Analytics) and the exact bill are not claimed: costs lag in the portal by hours. The estimate above is list price.
-- **The PowerShell mirrors** (`azure-up.ps1`, `prereqs.ps1`, `preprovision.ps1`) do not have the free-trial, `--llm`, `--preview` or sanity options; use the bash scripts.
+- **The PowerShell mirrors** (`azure-up.ps1`, `prereqs.ps1`, `preprovision.ps1`) do not have the small, `--llm`, `--preview` or sanity options; use the bash scripts.

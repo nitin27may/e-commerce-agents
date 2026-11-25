@@ -6,7 +6,7 @@ param amount int
 @minValue(1)
 @maxValue(100)
 param alertThresholdPercent int
-@description('More actual-cost thresholds (percent), each its own notification. The free-trial profile alerts at 50, 80 and 100.')
+@description('More actual-cost thresholds (percent), each its own notification. The small profile alerts at 50, 80 and 100.')
 param additionalActualThresholds array = []
 @description('First day of the budget month. Must not be in the past on create.')
 param startDate string = utcNow('yyyy-MM-01')

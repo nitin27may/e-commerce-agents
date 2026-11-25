@@ -520,7 +520,7 @@ def test_foundry_project_endpoint_is_an_output_without_secrets(template: dict[st
 
 
 def test_docs_say_the_azure_provider_is_foundry_for_openai_models() -> None:
-    for name in ("azure-deployment.md", "model-providers.md"):
+    for name in ("azure-deployment-reference.md", "model-providers.md"):
         text = (REPO_ROOT / "docs" / name).read_text(encoding="utf-8")
         assert re.search(r"`azure`\s+provider.*?is\s+Foundry", text, re.DOTALL), name
         assert "do not add `LLM_PROVIDER=foundry`" in text, name
@@ -1081,7 +1081,7 @@ def test_azure_up_accepts_only_an_immutable_image_tag(tag: str, accepted: bool) 
             "--location",
             "eastus2",
             "--profile",
-            "free-trial",
+            "small",
             "--image-tag",
             tag,
             "--dry-run",
@@ -1114,7 +1114,7 @@ def test_azure_up_needs_no_arguments_and_every_default_can_be_overridden() -> No
         return result.stdout + result.stderr
 
     plain = run()
-    assert "profile=free-trial" in plain and "demo-passwords=true" in plain and "verify=true" in plain
+    assert "profile=small" in plain and "demo-passwords=true" in plain and "verify=true" in plain
     assert "defaulted (override with the flag or ECA_* variable)" in plain
     by_variable = run(ECA_ENV="mine", ECA_LOCATION="westus3", ECA_IMAGE_TAG="sha-abcdef1")
     assert "env=mine location=westus3" in by_variable and "image=sha-abcdef1" in by_variable
@@ -1297,12 +1297,12 @@ def test_dotnet_dry_run_imports_only_the_images_the_stack_uses() -> None:
 
 
 # ----------------------------------------------------------------------------------------------
-# Free-trial profile: a 5 USD budget, free resources only (docs/azure-deployment-sequence.md).
+# Free-trial profile: a 5 USD budget, free resources only (docs/azure-deployment-stages.md).
 # ----------------------------------------------------------------------------------------------
 
-FREE_TRIAL = "free-trial-replay"
+FREE_TRIAL = "small-replay"
 OPENAI_USER_ROLE = "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd"
-FREE_TRIAL_FIXTURES = ["free-trial", "free-trial-replay", "free-trial-openai"]
+FREE_TRIAL_FIXTURES = ["small", "small-replay", "small-openai"]
 SCRIPT_ENV = {"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "HOME": str(Path.home())}
 
 
@@ -1319,12 +1319,12 @@ def _script(*args: str, env: dict[str, str] | None = None) -> subprocess.Complet
     )
 
 
-def _free_trial_profile() -> dict[str, Any]:
-    return json.loads((INFRA / "profiles" / "free-trial.json").read_text(encoding="utf-8"))
+def _small_profile() -> dict[str, Any]:
+    return json.loads((INFRA / "profiles" / "small.json").read_text(encoding="utf-8"))
 
 
-def test_free_trial_profile_is_the_smallest_shape_the_template_allows() -> None:
-    profile = _free_trial_profile()
+def test_small_profile_is_the_smallest_shape_the_template_allows() -> None:
+    profile = _small_profile()
     assert profile["budget"]["monthlyAmount"] == 10
     postgres = profile["postgres"]
     assert (postgres["tier"], postgres["skuName"], postgres["storageSizeGB"]) == ("Burstable", "Standard_B1ms", 32)
@@ -1340,7 +1340,7 @@ def test_free_trial_profile_is_the_smallest_shape_the_template_allows() -> None:
 
 
 @pytest.mark.parametrize("fixture", FREE_TRIAL_FIXTURES)
-def test_free_trial_deploys_nothing_that_bills_by_the_hour_beyond_postgres(
+def test_small_profile_deploys_nothing_that_bills_by_the_hour_beyond_postgres(
     raw_snapshots: dict[str, Resources], fixture: str
 ) -> None:
     resources = raw_snapshots[fixture]
@@ -1362,7 +1362,7 @@ def test_free_trial_deploys_nothing_that_bills_by_the_hour_beyond_postgres(
 
 
 @pytest.mark.parametrize("fixture", FREE_TRIAL_FIXTURES)
-def test_free_trial_budget_is_ten_with_three_actual_alerts_and_a_forecast(
+def test_small_profile_budget_is_ten_with_three_actual_alerts_and_a_forecast(
     raw_snapshots: dict[str, Resources], fixture: str
 ) -> None:
     budget = _one(raw_snapshots[fixture], "Microsoft.Consumption/budgets")["properties"]
@@ -1378,7 +1378,7 @@ def test_free_trial_budget_is_ten_with_three_actual_alerts_and_a_forecast(
 
 
 @pytest.mark.parametrize("fixture", FREE_TRIAL_FIXTURES)
-def test_free_trial_http_apps_scale_to_zero_and_never_past_one_replica(
+def test_small_profile_http_apps_scale_to_zero_and_never_past_one_replica(
     snapshots: dict[str, Apps], fixture: str
 ) -> None:
     apps = snapshots[fixture]
@@ -1395,14 +1395,14 @@ def test_free_trial_http_apps_scale_to_zero_and_never_past_one_replica(
     assert _container(apps["ca-orchestrator"])["resources"] == {"cpu": 0.5, "memory": "1Gi"}
 
 
-def test_free_trial_replay_has_no_model_account_and_no_model_secret(raw_snapshots: dict[str, Resources]) -> None:
+def test_small_profile_replay_has_no_model_account_and_no_model_secret(raw_snapshots: dict[str, Resources]) -> None:
     resources = raw_snapshots[FREE_TRIAL]
     assert not [r for r in resources if r["type"].startswith("Microsoft.CognitiveServices")]
     assert not _secret_entries(resources) & {"azure-openai-key", "llm-api-key"}
     assert OPENAI_USER_ROLE not in _role_ids(resources)
 
 
-def test_free_trial_replay_apps_call_no_model_and_do_not_enforce_a_cost_ceiling(snapshots: dict[str, Apps]) -> None:
+def test_small_profile_replay_apps_call_no_model_and_do_not_enforce_a_cost_ceiling(snapshots: dict[str, Apps]) -> None:
     apps = snapshots[FREE_TRIAL]
     for name in ("ca-orchestrator", "ca-product-discovery", "ca-outbox-worker", "job-db-init"):
         env = _env(apps[name])
@@ -1414,18 +1414,18 @@ def test_free_trial_replay_apps_call_no_model_and_do_not_enforce_a_cost_ceiling(
     assert _env(apps["job-db-init"])["EMBEDDING_PROVIDER"]["value"] == "replay"
 
 
-def test_free_trial_with_the_model_account_keeps_azure_openai_and_the_cost_ceiling(
+def test_small_profile_with_the_model_account_keeps_azure_openai_and_the_cost_ceiling(
     raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps]
 ) -> None:
-    assert len(_of_type(raw_snapshots["free-trial"], "Microsoft.CognitiveServices/accounts")) == 1
-    env = _env(snapshots["free-trial"]["ca-orchestrator"])
+    assert len(_of_type(raw_snapshots["small"], "Microsoft.CognitiveServices/accounts")) == 1
+    env = _env(snapshots["small"]["ca-orchestrator"])
     assert env["LLM_PROVIDER"]["value"] == "azure" and env["COST_BUDGET_MODE"]["value"] == "enforce"
 
 
-def test_free_trial_openai_reads_an_operator_endpoint_and_a_key_vault_key(
+def test_small_profile_openai_reads_an_operator_endpoint_and_a_key_vault_key(
     raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps]
 ) -> None:
-    fixture = "free-trial-openai"
+    fixture = "small-openai"
     assert "llm-api-key" in _secret_entries(raw_snapshots[fixture])
     assert not [r for r in raw_snapshots[fixture] if r["type"].startswith("Microsoft.CognitiveServices")]
     for name in ("ca-orchestrator", "ca-review-sentiment", "ca-outbox-worker", "job-db-init"):
@@ -1447,14 +1447,14 @@ def test_the_model_account_stays_the_default() -> None:
 
 
 @needs_bash
-def test_azure_up_accepts_the_free_trial_profile_and_skips_the_model_account() -> None:
+def test_azure_up_accepts_the_small_profile_and_skips_the_model_account() -> None:
     result = _script(
-        "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--profile", "free-trial", "--llm", "replay",
+        "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--profile", "small", "--llm", "replay",
         "--image-tag", "v1.4.0", "--dry-run",
     )  # fmt: skip
     out = result.stderr
     assert result.returncode == 0, out
-    assert "azd env set DEPLOY_PROFILE free-trial" in out
+    assert "azd env set DEPLOY_PROFILE small" in out
     assert "azd env set DEPLOY_OPENAI false" in out and "azd env set EXTERNAL_LLM_PROVIDER replay" in out
     assert "skipping model and quota checks" in out
     assert "az cognitiveservices model list" not in out and "azd up" not in out
@@ -1464,9 +1464,9 @@ def test_azure_up_accepts_the_free_trial_profile_and_skips_the_model_account() -
 
 
 @needs_bash
-def test_azure_up_free_trial_with_the_model_account_still_checks_quota() -> None:
+def test_azure_up_small_with_the_model_account_still_checks_quota() -> None:
     result = _script(
-        "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--profile", "free-trial",
+        "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--profile", "small",
         "--image-tag", "v1.4.0", "--dry-run",
     )  # fmt: skip
     assert result.returncode == 0, result.stderr
@@ -1495,7 +1495,7 @@ def test_azure_up_refuses_incomplete_model_or_profile_arguments(args: list[str])
 def test_azure_up_openai_dry_run_never_prints_the_key() -> None:
     result = _script(
         "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--image-tag", "v1.4.0", "--dry-run",
-        "--profile", "free-trial", "--llm", "openai", "--llm-base-url", "https://x.example/v1",
+        "--profile", "small", "--llm", "openai", "--llm-base-url", "https://x.example/v1",
         env={"LLM_API_KEY": "sk-secret-value"},
     )  # fmt: skip
     assert result.returncode == 0, result.stderr
@@ -1507,7 +1507,7 @@ def test_azure_up_openai_dry_run_never_prints_the_key() -> None:
 def test_preprovision_checks_the_external_model_settings_not_model_quota(tmp_path: Path) -> None:
     base = (
         'IMAGE_TAG="v1.4.0"\nPUBLIC_ACCESS="open"\nAZURE_LOCATION="eastus2"\n'
-        'DEPLOY_PROFILE="free-trial"\nDEPLOY_OPENAI="false"\n'
+        'DEPLOY_PROFILE="small"\nDEPLOY_OPENAI="false"\n'
     )
     store = tmp_path / "azd.env"
     store.write_text(base + 'EXTERNAL_LLM_PROVIDER="replay"\n', encoding="utf-8")
@@ -1520,10 +1520,10 @@ def test_preprovision_checks_the_external_model_settings_not_model_quota(tmp_pat
 
 
 def test_the_deployment_sequence_page_exists_and_is_linked() -> None:
-    page = REPO_ROOT / "docs" / "azure-deployment-sequence.md"
+    page = REPO_ROOT / "docs" / "azure-deployment-stages.md"
     assert page.is_file()
     guide = (REPO_ROOT / "docs" / "azure-deployment.md").read_text(encoding="utf-8")
-    assert "azure-deployment-sequence.md" in guide and "free-trial" in guide
+    assert "azure-deployment-stages.md" in guide and "small" in guide
     text = page.read_text(encoding="utf-8")
     assert "```mermaid" in text and "az provider register --namespace Microsoft.App" in text
     # The page is public: it must never carry an account, tenant, subscription or user identifier.
@@ -1533,7 +1533,7 @@ def test_the_deployment_sequence_page_exists_and_is_linked() -> None:
 @needs_bash
 def test_azure_up_preview_runs_a_what_if_and_never_provisions() -> None:
     result = _script(
-        "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--profile", "free-trial", "--llm", "replay",
+        "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--profile", "small", "--llm", "replay",
         "--image-tag", "v1.4.0", "--preview", "--dry-run",
     )  # fmt: skip
     lines = [line for line in result.stderr.splitlines() if "[dry-run]" in line]
@@ -1552,10 +1552,10 @@ def _model_deployments(resources: Resources) -> dict[str, dict[str, Any]]:
     return {r["name"].rsplit("/", 1)[-1]: r for r in found}
 
 
-def test_free_trial_deploys_foundry_with_a_nano_chat_model_and_the_smallest_embedding(
+def test_small_profile_deploys_foundry_with_a_nano_chat_model_and_the_smallest_embedding(
     raw_snapshots: dict[str, Resources],
 ) -> None:
-    resources = raw_snapshots["free-trial"]
+    resources = raw_snapshots["small"]
     account = _one(resources, "Microsoft.CognitiveServices/accounts")
     assert account["kind"] == "AIServices" and account["properties"]["allowProjectManagement"] is True
     assert len(_of_type(resources, "Microsoft.CognitiveServices/accounts/projects")) == 1
@@ -1570,14 +1570,14 @@ def test_free_trial_deploys_foundry_with_a_nano_chat_model_and_the_smallest_embe
     assert embedding["sku"]["capacity"] <= 50
 
 
-def test_free_trial_apps_use_gpt_4_1_mini_with_a_temperature(snapshots: dict[str, Apps]) -> None:
-    env = _env(snapshots["free-trial"]["ca-orchestrator"])
+def test_small_profile_apps_use_gpt_4_1_mini_with_a_temperature(snapshots: dict[str, Apps]) -> None:
+    env = _env(snapshots["small"]["ca-orchestrator"])
     assert env["LLM_MODEL"]["value"] == "gpt-4.1-mini"
     assert env["LLM_TEMPERATURE"]["value"] == "0.2", "only gpt-5.x rejects temperature"
     assert env["AZURE_OPENAI_DEPLOYMENT"]["value"] == "gpt-4.1-mini", "the deployment is named after the model"
 
 
-def test_free_trial_without_the_model_account_has_no_foundry_project(raw_snapshots: dict[str, Resources]) -> None:
+def test_small_profile_without_the_model_account_has_no_foundry_project(raw_snapshots: dict[str, Resources]) -> None:
     resources = raw_snapshots[FREE_TRIAL]
     assert not _of_type(resources, "Microsoft.CognitiveServices/accounts/projects")
 
@@ -1588,7 +1588,7 @@ def test_the_demo_profile_keeps_its_default_model_and_no_foundry_project(raw_sna
     assert not _of_type(resources, "Microsoft.CognitiveServices/accounts/projects")
 
 
-def test_the_free_trial_model_is_priced_in_the_shared_price_file() -> None:
+def test_the_small_model_is_priced_in_the_shared_price_file() -> None:
     prices = (REPO_ROOT / "agents" / "python" / "config" / "pricing" / "models.yaml").read_text(encoding="utf-8")
     assert "\n  gpt-5.4-nano:\n" in prices
 
@@ -1748,12 +1748,12 @@ def test_the_template_names_the_one_command_that_makes_a_portal_deployment_usabl
 
 def test_the_readme_and_docs_carry_the_button_in_its_own_marked_section() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    assert "## Deploy to Azure (optional)" in readme
-    section = readme.split("## Deploy to Azure (optional)", 1)[1].split("\n## ", 1)[0]
+    assert "\n## Deploy to Azure\n" in readme
+    section = readme.split("\n## Deploy to Azure\n", 1)[1].split("\n## ", 1)[0]
     assert "https://aka.ms/deploytoazurebutton" in section
     assert "portal.azure.com/#create/Microsoft.Template/uri/" in section
     assert "infra%2Fazuredeploy.json" in section
-    assert "costs money" in section.lower()
+    assert "costs about" in section.lower()
     head = readme.split("## ", 1)[0]
     assert "deploytoazurebutton" not in head, "the button must not be in the badge row"
 
@@ -1775,11 +1775,11 @@ SURVIVOR_CLASSES = [  # (name in the docs table, text azure-down --dry-run must 
 ]
 
 
-@pytest.mark.parametrize("fixture", ["free-trial", FREE_TRIAL, "free-trial-portal"])
-def test_free_trial_apps_authenticate_to_the_model_and_the_vault_by_identity(
+@pytest.mark.parametrize("fixture", ["small", FREE_TRIAL, "small-portal"])
+def test_small_profile_apps_authenticate_to_the_model_and_the_vault_by_identity(
     raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps], fixture: str
 ) -> None:
-    assert _free_trial_profile()["openAiAuth"] == "identity"
+    assert _small_profile()["openAiAuth"] == "identity"
     secrets = _secret_entries(raw_snapshots[fixture])
     assert secrets == KEYLESS_SECRETS, secrets
     for name, app in snapshots[fixture].items():
@@ -1797,17 +1797,17 @@ def test_free_trial_apps_authenticate_to_the_model_and_the_vault_by_identity(
         assert not app["properties"]["configuration"].get("registries"), name
 
 
-def test_free_trial_model_account_has_local_auth_disabled_and_apps_use_identity(
+def test_small_profile_model_account_has_local_auth_disabled_and_apps_use_identity(
     raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps]
 ) -> None:
-    account = _one(raw_snapshots["free-trial"], "Microsoft.CognitiveServices/accounts")
+    account = _one(raw_snapshots["small"], "Microsoft.CognitiveServices/accounts")
     assert account["properties"]["disableLocalAuth"] is True
-    env = _env(snapshots["free-trial"]["ca-orchestrator"])
+    env = _env(snapshots["small"]["ca-orchestrator"])
     assert env["AZURE_OPENAI_AUTH"]["value"] == "identity"
-    roles = _role_ids(raw_snapshots["free-trial"])
+    roles = _role_ids(raw_snapshots["small"])
     assert OPENAI_USER_ROLE in roles, "the app identity needs Cognitive Services OpenAI User"
     assert "53ca6127-db72-4b80-b1b0-d745d6d5456d" in roles, "and Azure AI User on the Foundry project"
-    assert "azure-openai-key" not in _secret_entries(raw_snapshots["free-trial"])
+    assert "azure-openai-key" not in _secret_entries(raw_snapshots["small"])
 
 
 def test_the_demo_profile_still_uses_the_key_and_local_auth(raw_snapshots: dict[str, Resources]) -> None:
@@ -1815,16 +1815,16 @@ def test_the_demo_profile_still_uses_the_key_and_local_auth(raw_snapshots: dict[
     assert account["properties"]["disableLocalAuth"] is False
 
 
-def test_local_auth_can_be_switched_back_on_for_the_free_trial(tmp_path: Path) -> None:
-    resources = _snapshot_with(tmp_path, "free-trial", "param openAiLocalAuth = 'enabled'\n")
+def test_local_auth_can_be_switched_back_on_for_the_small_profile(tmp_path: Path) -> None:
+    resources = _snapshot_with(tmp_path, "small", "param openAiLocalAuth = 'enabled'\n")
     account = _one(resources, "Microsoft.CognitiveServices/accounts")
     assert account["properties"]["disableLocalAuth"] is False
 
 
 def test_the_deployer_gets_the_model_role_for_the_keyless_sanity_call(tmp_path: Path) -> None:
     deployer = "11111111-2222-3333-4444-555555555555"
-    without = _snapshot_with(tmp_path / "a", "free-trial", "")
-    with_deployer = _snapshot_with(tmp_path / "b", "free-trial", f"param principalId = '{deployer}'\n")
+    without = _snapshot_with(tmp_path / "a", "small", "")
+    with_deployer = _snapshot_with(tmp_path / "b", "small", f"param principalId = '{deployer}'\n")
     mine = [
         r for r in _of_type(with_deployer, "Microsoft.Authorization/roleAssignments")
         if r["properties"]["principalId"] == deployer
@@ -1840,12 +1840,12 @@ def test_the_deployer_gets_the_model_role_for_the_keyless_sanity_call(tmp_path: 
     )
 
 
-def test_the_sanity_script_and_the_free_trial_profile_retrieve_no_key() -> None:
+def test_the_sanity_script_and_the_small_profile_retrieve_no_key() -> None:
     script = (REPO_ROOT / "scripts" / "azure" / "sanity.sh").read_text(encoding="utf-8")
     for forbidden in ("keys list", "secret show", "api-key", "listKeys", "get-secret", "AZURE_OPENAI_KEY"):
         assert forbidden not in script, forbidden
     assert "get-access-token --resource https://cognitiveservices.azure.com" in script
-    profile = json.dumps(_free_trial_profile()).lower()
+    profile = json.dumps(_small_profile()).lower()
     for word in ("password", "secret", "apikey", "api_key", 'key"'):
         assert word not in profile.replace("storepostgrespassword", "").replace("minimalsecrets", ""), word
 
@@ -1854,7 +1854,7 @@ def test_the_sanity_script_and_the_free_trial_profile_retrieve_no_key() -> None:
 
 
 def _survivor_table() -> list[str]:
-    text = (REPO_ROOT / "docs" / "azure-deployment-sequence.md").read_text(encoding="utf-8")
+    text = (REPO_ROOT / "docs" / "azure-deployment-stages.md").read_text(encoding="utf-8")
     section = text.split("What survives a resource group delete", 1)[1].split("\n## ", 1)[0].split("\n### ", 1)[0]
     rows = [line for line in section.splitlines() if line.startswith("| ") and not line.startswith("| ---")]
     return [row.split("|")[1].strip() for row in rows[1:]]
@@ -1952,5 +1952,5 @@ def test_no_app_registration_is_created_anywhere_in_the_azure_scripts() -> None:
         text = path.read_text(encoding="utf-8")
         assert "az ad app" not in text and "az ad sp" not in text, path.name
     assert not (REPO_ROOT / "scripts" / "azure" / "setup-oidc.sh").exists()
-    guide = (REPO_ROOT / "docs" / "azure-deployment.md").read_text(encoding="utf-8")
+    guide = (REPO_ROOT / "docs" / "azure-deployment-reference.md").read_text(encoding="utf-8")
     assert "Do you need an Entra app registration?" in guide

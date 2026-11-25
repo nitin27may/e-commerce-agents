@@ -96,8 +96,9 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [roadmap.md](roadmap.md) | What shipped, what is next, what is deliberately not planned |
 | [orchestration-benchmark.md](orchestration-benchmark.md) | The same question routed five ways, with latency and cost |
 | [reported-vs-actual.md](reported-vs-actual.md) | Bugs that turned out bigger than the report said, and how each was found |
-| [azure-deployment-sequence.md](azure-deployment-sequence.md) | The one-command free-trial deployment: defaults and overrides, stages, measured results, costs, teardown |
-| [azure-deployment.md](azure-deployment.md) | Draft Container Apps deployment: topology, scripts, costs, assumptions still to confirm |
+| [azure-deployment.md](azure-deployment.md) | Deploy to Azure with one command: what it creates, options, accounts, cost, teardown |
+| [azure-deployment-reference.md](azure-deployment-reference.md) | Azure reference: profiles, wiring, optional gateway and per-app identities, the portal button |
+| [azure-deployment-stages.md](azure-deployment-stages.md) | Azure stages one by one, measured results, costs, keyless detail, teardown |
 | [workflows/](workflows/README.md) | The workflow graphs behind the two workflow modes |
 | [adr/](adr/README.md) | Architecture decision records |
 

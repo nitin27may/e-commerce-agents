@@ -4,7 +4,7 @@ using '../main.bicep'
 
 param environmentName = 'ci-freetrial-replay'
 param location = 'eastus2'
-param profile = 'free-trial'
+param profile = 'small'
 param deployOpenAi = false
 param postgresAdminPassword = 'ci-placeholder'
 param jwtSecret = 'ci-placeholder'

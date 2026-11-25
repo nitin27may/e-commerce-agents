@@ -29,7 +29,7 @@ confirmation, Python then .NET), #314 (`draft_seller_response` ownership) and #3
 
 | Issue | What remains | Why it is open |
 |---|---|---|
-| #100 (deploy chapter) | The course chapter on deploying with azd (the deployment itself is done and documented in `docs/azure-deployment-sequence.md`) | #89 and #91 are closed after the one-command run (PR #263); what they left (Entra auth to Postgres, deployed-URL Playwright, workbook, OIDC workflow, awesome-azd, hosted-agents spike, Foundry evaluator scores) is #335. `eca-*` environments must be torn down after testing |
+| #100 (deploy chapter) | The course chapter on deploying with azd (the deployment itself is done and documented in `docs/azure-deployment-stages.md`) | #89 and #91 are closed after the one-command run (PR #263); what they left (Entra auth to Postgres, deployed-URL Playwright, workbook, OIDC workflow, awesome-azd, hosted-agents spike, Foundry evaluator scores) is #335. `eca-*` environments must be torn down after testing |
 | #100 (other chapters) | Durable workflows, Foundry evals and AG-UI chapters; chapters 33 to 36 are done | Foundry evals needs the Azure credential; the others are unwritten |
 | #97 | The .NET live baselines (about 1.50 USD of tokens), argument-level tool-call scoring, and whatever else the issue checklist still shows unticked | Remainders, not blockers. `azure_content_safety` and `COST_BUDGET_MODE` default are recorded decisions (no code). Close it or split the rest when the checklist is reconciled |
 | #299 | A real carrier feed | External system. Everything else in the issue (five event types, monthly budgets, the responder) is built, parity row 40 |
@@ -43,7 +43,7 @@ Judge-calibration labels: the maintainer reviews `agents/python/evals/judge_cali
 `uv run python -m evals.judge_calibration.run --rescore` (no model call) reports whether the judge decision holds.
 
 **The Azure step (last, free trial, capped at 10 USD).** Order: `scripts/azure-up.sh --dry-run`, a `what-if` and a cost estimate,
-deploy with the free-trial profile (public GHCR images, Entra bearer-token model access, no model key stored), `scripts/azure/sanity.sh`,
+deploy with the small profile (public GHCR images, Entra bearer-token model access, no model key stored), `scripts/azure/sanity.sh`,
 a measured cost from Cost Management, teardown, `scripts/azure/verify-clean.sh`. #89, #91 and the deployment chapter of #100 close together
 when **four conditions** hold: (1) the stack comes up and the sanity script passes with bearer-token model access; (2) no model key
 exists in the deployment; (3) teardown leaves nothing (`verify-clean.sh`); (4) spend stays under 10 USD with the measured figure
@@ -113,7 +113,7 @@ Nothing here is code. Do it before M3 and M4.
 
 ### M4. First real Azure deployment (I5) **[machine]** (2 days plus wall clock)
 
-*The Azure step in the live block supersedes this list for the first deployment (free-trial profile, key-free, 10 USD cap); the checks below are what to run once it passes.*
+*The Azure step in the live block supersedes this list for the first deployment (small profile, key-free, 10 USD cap); the checks below are what to run once it passes.*
 
 1. `scripts/azure-up.sh --env <e> --location <r> --dry-run`, then `azure.yml` mode `what-if`.
 2. Real deploy: `scripts/azure-up.sh --env <e> --location <r>` (demo profile, `openAiAuth=key` first).

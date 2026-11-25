@@ -28,11 +28,11 @@ param authSigningKeyEncryptionKey string
 @secure()
 param seedStaffPassword string
 @secure()
-@description('Operator-supplied API key for an OpenAI-compatible endpoint (free-trial path).')
+@description('Operator-supplied API key for an OpenAI-compatible endpoint (small path).')
 param llmApiKey string = ''
-@description('Write the postgres-admin-password secret. Nothing reads it (the apps use database-url, which carries the password); the free-trial profile turns it off so the password exists in one secret only.')
+@description('Write the postgres-admin-password secret. Nothing reads it (the apps use database-url, which carries the password); the small profile turns it off so the password exists in one secret only.')
 param storePostgresPassword bool = true
-@description('Write a2a-identity-key, oauth-seed-key and auth-signing-key-encryption-key. The first is optional outside token mode (the key falls back to the agent secret) and the other two are read only with AUTH_MODE=oauth; the free-trial profile turns them off unless the auth server is deployed.')
+@description('Write a2a-identity-key, oauth-seed-key and auth-signing-key-encryption-key. The first is optional outside token mode (the key falls back to the agent secret) and the other two are read only with AUTH_MODE=oauth; the small profile turns them off unless the auth server is deployed.')
 param storeAuthSecrets bool = true
 @description('Write the llm-api-key secret. A plain flag, not !empty(llmApiKey): a secure value is not known when the template is evaluated offline.')
 param storeLlmApiKey bool = false

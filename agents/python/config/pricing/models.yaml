@@ -68,7 +68,7 @@ models:
     source: https://prices.azure.com/api/retail/prices (Foundry Models, "Azure OpenAI GPT5", eastus2, global standard)
     as_of: 2026-11-23
     verified: false
-    note: Read from the public Retail Prices API, not from a pricing page; the free-trial profile's chat model.
+    note: Read from the public Retail Prices API, not from a pricing page; the small profile's chat model.
   gpt-5.1-mini:
     provider: openai
     input_per_1m: 0.25

@@ -4,7 +4,7 @@ using '../main.bicep'
 
 param environmentName = 'ci-freetrial-byo'
 param location = 'eastus2'
-param profile = 'free-trial'
+param profile = 'small'
 param deployOpenAi = false
 param externalLlmProvider = 'openai'
 param externalLlmBaseUrl = 'https://llm.example.invalid/v1'

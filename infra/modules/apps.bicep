@@ -72,7 +72,7 @@ param allowedIpRanges array = []
 
 param deployAuthServer bool = false
 param deployMcp bool = false
-@description('Mount a2a-identity-key, oauth-seed-key and auth-signing-key-encryption-key. False (free-trial) when the auth server is off and the A2A key is the agent secret: those three are not in Key Vault then.')
+@description('Mount a2a-identity-key, oauth-seed-key and auth-signing-key-encryption-key. False (small) when the auth server is off and the A2A key is the agent secret: those three are not in Key Vault then.')
 param includeAuthSecrets bool = true
 
 var identityOf = toObject(appIdentities, i => i.app)
