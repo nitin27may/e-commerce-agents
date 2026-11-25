@@ -207,15 +207,31 @@ body = {"messages": [{"role": "user", "content": "Reply with the single word: po
 req = urllib.request.Request(
     url, method="POST", data=json.dumps(body).encode(), headers={"Content-Type": "application/json", "Authorization": "Bearer " + os.environ["SANITY_TOKEN"]}
 )
-try:
-    with urllib.request.urlopen(req, timeout=120) as res:
-        data = json.load(res)
-except urllib.error.HTTPError as exc:
-    print("      HTTP %s from the model endpoint: %r" % (exc.code, exc.read()[:300]), file=sys.stderr)
-    sys.exit(1)
-except Exception as exc:  # noqa: BLE001
-    print("      model endpoint unreachable: %s" % exc, file=sys.stderr)
-    sys.exit(1)
+# A brand-new account answers badly for a few minutes: the endpoint's TLS is not ready (connection reset), then the caller's
+# role assignment has not propagated (401 or 403), and the deployment can lag (404). Retry those for up to four minutes; a
+# failure that persists is then reported as it is.
+import time
+
+deadline = time.monotonic() + 240
+data = None
+while data is None:
+    problem = None
+    try:
+        with urllib.request.urlopen(req, timeout=120) as res:
+            data = json.load(res)
+    except urllib.error.HTTPError as exc:
+        problem = "HTTP %s from the model endpoint: %r" % (exc.code, exc.read()[:300])
+        if exc.code not in (401, 403, 404, 408, 429, 500, 502, 503, 504):
+            print("      " + problem, file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:  # noqa: BLE001
+        problem = "model endpoint unreachable: %s" % exc
+    if data is None:
+        if time.monotonic() >= deadline:
+            print("      " + problem, file=sys.stderr)
+            sys.exit(1)
+        print("      not ready yet (%s); retrying in 20 s" % problem[:110], file=sys.stderr)
+        time.sleep(20)
 text = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
 usage = data.get("usage") or {}
 print("      model %s answered %d characters; tokens in %s, out %s" % (data.get("model", "?"), len(text), usage.get("prompt_tokens"), usage.get("completion_tokens")))

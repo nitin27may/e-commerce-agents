@@ -312,3 +312,17 @@ def test_a_missing_azd_key_reads_as_empty_and_secrets_are_generated(tmp_path: Pa
         assert name in result.stdout, f"{name} was not generated: {result.stdout}"
     stored = store.read_text(encoding="utf-8")
     assert "SEED_STAFF_PASSWORD=" in stored and "ERROR" not in stored
+
+
+def test_quota_lookup_finds_the_row_azure_spells_without_the_hyphen(tmp_path: Path) -> None:
+    """Azure names the gpt-4.1-mini usage row OpenAI.GlobalStandard.gpt4.1-mini; the hyphenated name found nothing."""
+    usage = '[{"name":{"value":"OpenAI.GlobalStandard.gpt4.1-mini"},"currentValue":0,"limit":200}]'
+    ok = _call(
+        tmp_path, {}, f"USAGE_JSON='{usage}'; check_quota centralus OpenAI.GlobalStandard.gpt-4.1-mini 100 gpt-4.1-mini"
+    )
+    assert ok.returncode == 0, ok.stderr
+    assert "no quota row" not in ok.stderr
+    too_small = _call(
+        tmp_path, {}, f"USAGE_JSON='{usage}'; check_quota centralus OpenAI.GlobalStandard.gpt-4.1-mini 500 gpt-4.1-mini"
+    )
+    assert too_small.returncode != 0, "a limit of 200 K TPM cannot satisfy 500"

@@ -97,7 +97,9 @@ default_location() {
     local r skus
     for r in "${REGION_CANDIDATES[@]}"; do
         skus="$(az postgres flexible-server list-skus --location "$r" --output json 2>/dev/null || true)"
-        if printf '%s' "$skus" | grep -q 'Standard_B1ms' && ! printf '%s' "$skus" | grep -q '"reason": "[^"]*restricted'; then
+        # Here-strings, not `printf | grep -q`: with pipefail, grep -q exits at the first match, printf dies of SIGPIPE on a
+        # large listing, and the pipeline reports failure for a match that was found.
+        if grep -q 'Standard_B1ms' <<<"$skus" && ! grep -q '"reason": "[^"]*restricted' <<<"$skus"; then
             printf '%s' "$r"; return 0
         fi
     done

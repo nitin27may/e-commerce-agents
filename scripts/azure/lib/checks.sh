@@ -33,6 +33,15 @@ check_quota() {
     used="$(jq -r --arg n "$usage_name" '[.[] | select(.name.value == $n)][0].currentValue // empty' <<<"$USAGE_JSON" 2>/dev/null || true)"
     limit="$(jq -r --arg n "$usage_name" '[.[] | select(.name.value == $n)][0].limit // empty' <<<"$USAGE_JSON" 2>/dev/null || true)"
     if [ -z "$limit" ]; then
+        # Azure spells the 4.x rows without the hyphen: the usage row for gpt-4.1-mini is OpenAI.GlobalStandard.gpt4.1-mini.
+        local alt
+        alt="$(sed -E 's/^(OpenAI\.[A-Za-z]+\.)gpt-([0-9])/\1gpt\2/' <<<"$usage_name")"
+        if [ "$alt" != "$usage_name" ]; then
+            used="$(jq -r --arg n "$alt" '[.[] | select(.name.value == $n)][0].currentValue // empty' <<<"$USAGE_JSON" 2>/dev/null || true)"
+            limit="$(jq -r --arg n "$alt" '[.[] | select(.name.value == $n)][0].limit // empty' <<<"$USAGE_JSON" 2>/dev/null || true)"
+        fi
+    fi
+    if [ -z "$limit" ]; then
         warn "no quota row for $usage_name in $location; cannot confirm ${needed}K TPM is free for $label. Continuing."
         return 0
     fi
