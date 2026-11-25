@@ -3,7 +3,7 @@
 #
 #   scripts/azure-up.sh --env demo1 --location eastus2 [--image-tag v1.4.0] [--profile demo|reference|free-trial]
 #                       [--llm replay|openai [--llm-base-url https://host/v1] [--llm-model gpt-4.1-mini]]
-#                       [--openai-location eastus2] [--public-open] [--allowed-ips 198.51.100.0/24,...] [--demo-passwords]
+#                       [--openai-location eastus2] [--public-open] [--allowed-ips 198.51.100.0/24,...] [--demo-passwords] [--verify]
 #                       [--auth-server] [--mcp] [--stack python|dotnet] [--image-source ghcr|acr] [--build-from-source] [--dry-run]
 #
 # Defaults: demo profile, frontend reachable only from this machine's public IP, gpt-5.1, pinned image tag
@@ -28,9 +28,17 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 # shellcheck source=scripts/azure/lib/common.sh
 source scripts/azure/lib/common.sh
 
+# Numbered stages with elapsed time, so a run shows where it is. Five stages: checks, secrets, provision, smoke, summary.
+STAGE_TOTAL=5
+STARTED_AT=$SECONDS
+stage() {
+    local n="$1"; shift
+    printf '\n[azure] ---- [%s/%s] %s (elapsed %dm%02ds) ----\n' "$n" "$STAGE_TOTAL" "$*" $(((SECONDS - STARTED_AT) / 60)) $(((SECONDS - STARTED_AT) % 60)) >&2
+}
+
 ENV_NAME="" LOCATION="" OPENAI_LOCATION="" PROFILE="demo" IMAGE_TAG_ARG="" PUBLIC_ACCESS_ARG="restricted"
 ALLOWED_IPS_ARG="" AUTH_SERVER=false MCP=false STACK=python IMAGE_SOURCE_ARG=auto BUILD_FROM_SOURCE=false
-LLM="" LLM_BASE_URL="" LLM_MODEL="" PREVIEW=false DEMO_PASSWORDS=false
+LLM="" LLM_BASE_URL="" LLM_MODEL="" PREVIEW=false DEMO_PASSWORDS=false VERIFY=false
 while [ $# -gt 0 ]; do
     case "$1" in
         --env) ENV_NAME="$2"; shift 2 ;;
@@ -47,6 +55,7 @@ while [ $# -gt 0 ]; do
         --build-from-source) BUILD_FROM_SOURCE=true; shift ;;
         --preview) PREVIEW=true; shift ;;
         --demo-passwords) DEMO_PASSWORDS=true; shift ;;
+        --verify) VERIFY=true; shift ;;
         --llm) LLM="$2"; shift 2 ;;
         --llm-base-url) LLM_BASE_URL="$2"; shift 2 ;;
         --llm-model) LLM_MODEL="$2"; shift 2 ;;
@@ -111,6 +120,7 @@ prereq_args=(--location "$LOCATION" --profile "$PROFILE" --env "$ENV_NAME")
 [ -z "$OPENAI_LOCATION" ] || prereq_args+=(--openai-location "$OPENAI_LOCATION")
 [ "$AZURE_DRY_RUN" != "1" ] || prereq_args+=(--dry-run)
 [ -z "$LLM" ] || prereq_args+=(--no-openai)
+stage 1 "Checking the subscription, providers, regional SKUs and model quota (reads only, nothing is created)"
 scripts/azure/prereqs.sh "${prereq_args[@]}"
 
 settings=("AZURE_LOCATION=$LOCATION" "DEPLOY_PROFILE=$PROFILE" "IMAGE_TAG=$image_tag" "PUBLIC_ACCESS=$PUBLIC_ACCESS_ARG"
@@ -179,6 +189,7 @@ for kv in "${settings[@]}"; do azd env set "${kv%%=*}" "${kv#*=}"; done
 # Key Vault and the apps held (sign-in then failed with a password authentication error). Idempotent: existing values stay.
 # shellcheck source=scripts/azure/lib/secrets.sh
 source scripts/azure/lib/secrets.sh
+stage 2 "Generating secrets into the local azd environment (never printed)"
 ensure_azure_secrets >/dev/null || die "could not generate secrets (need openssl or python3)"
 
 if [ "$PREVIEW" = true ]; then
@@ -198,6 +209,7 @@ provision_with_retry() {
     fi
 }
 
+stage 3 "Provisioning in Azure (azd lists each resource as it finishes; about 5 to 8 minutes)"
 # acr: two provisions. The first (DEPLOY_APPS=false, set by preprovision while the registry lacks this tag) creates
 # the infrastructure; its postprovision fills the registry. The second starts the apps and bootstraps the database.
 if [ "$image_source" = acr ]; then
@@ -209,4 +221,42 @@ if [ "$image_source" = acr ]; then
 else
     provision_with_retry azd provision --no-prompt
 fi
-log "done. Staff password: azd env get-value SEED_STAFF_PASSWORD. Tear down: scripts/azure-down.sh --env $ENV_NAME"
+stage 5 "Done"
+frontend_url="$(env_get FRONTEND_URL)"
+elapsed=$((SECONDS - STARTED_AT))
+{
+    echo
+    echo "=================================================================================================="
+    echo "  DEPLOYED: $ENV_NAME in $LOCATION ($((elapsed / 60))m$((elapsed % 60))s)"
+    echo "=================================================================================================="
+    echo "  Open this:   ${frontend_url:-<no FRONTEND_URL in the azd environment>}"
+    echo "               (it answers only the IP that deployed it: $(env_get DEPLOYER_IP); change with: azd env set ALLOWED_IPS ...)"
+    echo
+    if [ "$(env_get SEED_DEMO_PASSWORDS)" = "true" ]; then
+        echo "  Sign in with the documented demo accounts:"
+        echo "      customer   alice.johnson@gmail.com   customer123    (orders, a delivered order to return)"
+        echo "      admin      admin.demo@gmail.com      admin123       (approvals inbox, /runs)"
+        echo "      support    support.demo@gmail.com    support123"
+        echo "      seller     seller.demo@gmail.com     seller123"
+        echo "      power user power.demo@gmail.com      power123"
+    else
+        echo "  Sign in: customer alice.johnson@gmail.com / customer123;"
+        echo "           staff (admin.demo, support.demo, seller.demo, seller2.demo @gmail.com) with the generated password:"
+        echo "           azd env get-value SEED_STAFF_PASSWORD"
+    fi
+    echo
+    echo "  Please test it. As Alice, ask:"
+    echo "      Show me some wireless headphones with prices"
+    echo "      I want to return my most recent order, it arrived damaged      (then approve it as the admin)"
+    echo
+    echo "  Verify from here (database, a keyless model call, a chat turn):"
+    echo "      scripts/azure/sanity.sh --env $ENV_NAME"
+    echo
+    echo "  It is billing now (about 5 cents an hour idle, apps scale to zero). When you are done:"
+    echo "      scripts/azure-down.sh --env $ENV_NAME"
+    echo "=================================================================================================="
+} >&2
+if [ "$VERIFY" = true ]; then
+    stage 5 "Verifying (database, a bearer-token model call, one chat turn)"
+    scripts/azure/sanity.sh --env "$ENV_NAME" || warn "sanity reported a failure; the environment is still up"
+fi
