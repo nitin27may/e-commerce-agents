@@ -17,7 +17,7 @@
          at 1.28.0 keeps them aligned. -->
     <PackageVersion Include="Microsoft.Agents.AI.Workflows" Version="1.28.0" />
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
-    <PackageVersion Include="Anthropic" Version="13.13.0" />
+    <PackageVersion Include="Anthropic" Version="13.14.0" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
   </ItemGroup>
 
