@@ -11,6 +11,9 @@ namespace ECommerceAgents.Shared.Tests;
 /// Per-agent model selection (P-2): the .NET twin of <c>tests/test_model_override.py</c>. No shipped
 /// YAML carries a <c>model:</c> block, so each test copies the real prompt tree to a temp directory.
 /// </summary>
+// Creates chat clients with real agent names, which writes GatewayHeaders' process-wide last-agent value that the
+// gateway-header tests read (#333); running in the same collection keeps them from overlapping.
+[Collection(nameof(ProcessEnvironmentCollection))]
 public sealed class ModelOverrideTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "model-override-" + Guid.NewGuid().ToString("N"));
