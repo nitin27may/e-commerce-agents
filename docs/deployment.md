@@ -379,7 +379,7 @@ is for the Aspire dashboard's resource graph, one-command local debugging of the
 mixing stacks per service. It reads the same variable names with the same defaults as compose
 (`EnvironmentContract.cs` copies them), and the two never share a data volume.
 
-**Prerequisites:** the .NET 10 SDK, Docker (Postgres, Redis, the seeder and the auth-server are containers),
+**Prerequisites:** the .NET 11 SDK, Docker (Postgres, Redis, the seeder and the auth-server are containers),
 `uv` (a single `uv sync` of `agents/python` feeds the Python processes), Node and `pnpm` (the frontend runs as
 `pnpm dev`). No Aspire workload or CLI is needed: the AppHost is a normal project.
 

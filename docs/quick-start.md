@@ -225,7 +225,7 @@ line, or use a backtick (`` ` ``) for line continuation instead of the backslash
 
 ### Or under Aspire
 
-If you have the .NET 10 SDK, `uv` and `pnpm`, the Aspire AppHost starts the same stack with a resource
+If you have the .NET 11 SDK, `uv` and `pnpm`, the Aspire AppHost starts the same stack with a resource
 dashboard instead of compose. Docker still runs Postgres, Redis, the seeder and the auth-server.
 
 ```bash
@@ -396,7 +396,7 @@ This project sets a 4 CPU, 8 GB minimum machine; stop the Codespace when you are
 - The compatible-server path uses `OPENAI_API_KEY` as its key; there is no `LLM_API_KEY`. If the server has no
   `/embeddings` route, set the `EMBEDDING_*` variables in `.env` (see [Configuration](configuration.md#embeddings-are-configured-separately)).
 - Docker-in-Docker, the full stack and the web UI through the forwarded 3000 address have not been run in a real
-  Codespace. The same goes for the pnpm 10.15.0 pin and the .NET 10 feature inside GitHub's builder. A CI job builds
+  Codespace. The same goes for the pnpm 10.15.0 pin and the .NET 11 feature inside GitHub's builder. A CI job builds
   the container and runs the setup step on every change under `.devcontainer/`, which covers the build and the
   toolchain but not the running stack.
 - Never paste a key into `.env` in a Codespace you share, or commit it. Use secrets.

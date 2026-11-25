@@ -45,7 +45,11 @@ public sealed class CostControlTests
     {
         // Output costs 4x input. Pricing both at one rate is a common
         // simplification that understates a chatty agent's bill significantly.
-        Pricing.EstimateUsd(tokensIn, tokensOut).Should().Be((decimal)expected);
+        // (decimal)double is exact on .NET 11 (0.002 is not 0.002M), so go through the shortest text.
+        var expectedUsd = decimal.Parse(
+            expected.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+            System.Globalization.CultureInfo.InvariantCulture);
+        Pricing.EstimateUsd(tokensIn, tokensOut).Should().Be(expectedUsd);
     }
 
     // ─────────────── Accumulation ───────────────

@@ -51,10 +51,9 @@ recorded. The Postgres admin password remains, because Entra authentication for 
 comment says so. The first-deploy checklist in `docs/azure-deployment.md` is the runbook. M4 below keeps the longer list of checks
 to run once the step passes (deployed evals, `azure.yml` end to end).
 
-**Pending, separate from the Azure step: the .NET 11 move.** The .NET stack targets `net10.0` (`agents/dotnet/Directory.Build.props`) and
-the Aspire 17 AppHost requires .NET 10. Moving to .NET 11 is its own change (target framework, Dockerfile base images, the SDK in CI,
-AppHost packages, then every .NET test and the two mixed-stack boots) and is not started. It needs no key and no Azure, and it
-must not ride along with the Azure step.
+**Pending, separate from the Azure step: the .NET 11 move.** Prepared as draft PR #331 (`net11.0`, SDK 11.0.100, Dockerfile base
+images, CI, the runtime-versioned packages at 11.0.0). It needs no key and no Azure. Merge it only after the Azure run, and not
+together with it; rollback is a single revert.
 
 **Rules for the order:** small and keyless first; keyed work uses the local Azure OpenAI key under a per-lane spend cap; an issue
 closes only with evidence on `main`; Dependabot is monthly for images, compose files and Actions and weekly for the three package
@@ -108,7 +107,7 @@ Nothing here is code. Do it before M3 and M4.
    (`azure-deployment.md` says why).
 5. Keys for M3: Azure OpenAI (existing), OpenAI, and any of Gemini/Anthropic/OpenRouter to be tried; Ollama
    installed with one tool-capable model.
-6. Tools: Docker, `uv`, `pnpm`, .NET 10 SDK, `azd`, Bicep CLI.
+6. Tools: Docker, `uv`, `pnpm`, .NET 11 SDK, `azd`, Bicep CLI.
 
 *Done when* `scripts/azure/prereqs.sh` passes and `scripts/azure-up.sh --env t1 --location <r> --dry-run` prints a plan.
 

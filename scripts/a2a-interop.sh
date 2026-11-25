@@ -84,7 +84,7 @@ export DATABASE_URL="postgresql://nobody:nobody@127.0.0.1:1/none"
 echo "a2a-interop: building the .NET host and tests"
 (cd "$NET_DIR" && dotnet build tests/ECommerceAgents.A2AInteropHost -v q -nologo) || exit 1
 (cd "$NET_DIR" && dotnet build tests/ECommerceAgents.Shared.Tests -v q -nologo) || exit 1
-HOST_DLL="$(ls "$NET_DIR"/tests/ECommerceAgents.A2AInteropHost/bin/Debug/net10.0/ECommerceAgents.A2AInteropHost.dll)"
+HOST_DLL="$(ls "$NET_DIR"/tests/ECommerceAgents.A2AInteropHost/bin/Debug/net11.0/ECommerceAgents.A2AInteropHost.dll)"
 
 STATUS=0
 

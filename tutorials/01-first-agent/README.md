@@ -16,7 +16,7 @@ You ask it one question: **"What is the capital of France?"**
 
 ## Prerequisites
 
-- Completed [Chapter 00 — Setup](../00-setup/): `uv` for Python, and the .NET 10 SDK for the .NET side (the projects target `net10.0`). Docker is only needed for the full application.
+- Completed [Chapter 00 — Setup](../00-setup/): `uv` for Python, and the .NET 11 SDK for the .NET side (the projects target `net11.0`). Docker is only needed for the full application.
 - **No key is needed to run this chapter.** With no key in the environment, Python replays a recorded response (a fixture), and the .NET test project (`dotnet test`) drives a scripted client. Only `dotnet run` talks to a live model. For a live run, add a key to the repo-root `.env`:
 
 | Provider | Required | Optional |

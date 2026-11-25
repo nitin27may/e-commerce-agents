@@ -53,7 +53,7 @@ cd "$REPO_ROOT" || exit 2
 section "Tooling"
 check "uv (Python package manager)" "command -v uv"
 check "Python 3.12+" "python3 --version | grep -E 'Python 3\.(12|13|14)'"
-check ".NET SDK 9+" "dotnet --list-sdks | grep -E '^(9|10)\.'"
+check ".NET SDK 11+" "dotnet --list-sdks | grep -E '^(1[1-9]|[2-9][0-9])\.'"
 check "Docker" "command -v docker"
 check "Docker Compose v2" "docker compose version"
 check "Node 26+ (for Next.js frontend)" "node --version | grep -E 'v(26)'"

@@ -22,7 +22,7 @@ run, a model key this repository does not have, or an external system.
 | # | Item | Why it is here |
 |---|---|---|
 | 1 | [First real Azure deployment](#first-real-azure-deployment) | The Container Apps path is written and checked offline. It has never run against a real subscription. It is the last step, and several other items wait on it |
-| 2 | [The .NET 11 move](#the-net-11-move) | The .NET stack targets .NET 10. A separate change that needs no key and no Azure |
+| 2 | [The .NET 11 move](#the-net-11-move) | The .NET 11 move is prepared as draft PR #331. A separate change that needs no key and no Azure |
 | 3 | [Model-calling parity run](#model-calling-parity-run) | The keyless parity gate runs in CI; a comparison that calls a model does not. Also the .NET live baselines |
 | 4 | [Foundry features that need an Azure credential](#foundry-features-that-need-an-azure-credential) | Foundry evaluators logging to a project, the safety evaluator, hosted agents. They wait on item 1 |
 | 5 | [Publish the Azure reference](#publish-the-azure-reference) | Topologies with measured costs. The difference between them is the content |
@@ -56,9 +56,9 @@ Deployed evals, the `azure.yml` workflow end to end and the deployment chapter o
 
 ### The .NET 11 move
 
-The .NET stack builds on `net10.0` and the Aspire 17 AppHost requires .NET 10. Moving to .NET 11 touches the target framework, the
-Dockerfile base images, the SDK in CI and the AppHost packages, and is done when every .NET test and both mixed-stack boots pass.
-It is its own change, separate from the Azure run, and has not started.
+The .NET stack targets `net11.0` on draft PR #331 (target framework, `global.json`, Dockerfile base images, the SDK in CI, the
+runtime-versioned packages). It is done when every .NET test and both mixed-stack boots pass on that PR. It is its own change,
+separate from the Azure run: merge it after the Azure deployment, and roll back with a single revert.
 
 ### Model-calling parity run
 
