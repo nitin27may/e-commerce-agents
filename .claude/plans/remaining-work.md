@@ -29,7 +29,7 @@ confirmation, Python then .NET), #314 (`draft_seller_response` ownership) and #3
 
 | Issue | What remains | Why it is open |
 |---|---|---|
-| #89, #91, #100 (deploy chapter) | The first real Azure deployment; Foundry features that need an Azure credential (`--log-to-project`, the Foundry safety evaluator, hosted agents); the deployment chapter of the course | They close together after the keyless Azure run below passes. PR #263 (free-trial profile, `sanity.sh`, `verify-clean.sh`, Deploy to Azure button) is held until then |
+| #100 (deploy chapter) | The course chapter on deploying with azd (the deployment itself is done and documented in `docs/azure-deployment-sequence.md`) | #89 and #91 are closed after the one-command run (PR #263); what they left (Entra auth to Postgres, deployed-URL Playwright, workbook, OIDC workflow, awesome-azd, hosted-agents spike, Foundry evaluator scores) is #335. `eca-*` environments must be torn down after testing |
 | #100 (other chapters) | Durable workflows, Foundry evals and AG-UI chapters; chapters 33 to 36 are done | Foundry evals needs the Azure credential; the others are unwritten |
 | #97 | The .NET live baselines (about 1.50 USD of tokens), argument-level tool-call scoring, and whatever else the issue checklist still shows unticked | Remainders, not blockers. `azure_content_safety` and `COST_BUDGET_MODE` default are recorded decisions (no code). Close it or split the rest when the checklist is reconciled |
 | #299 | A real carrier feed | External system. Everything else in the issue (five event types, monthly budgets, the responder) is built, parity row 40 |
