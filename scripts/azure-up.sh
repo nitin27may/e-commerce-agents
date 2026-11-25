@@ -3,7 +3,7 @@
 #
 #   scripts/azure-up.sh --env demo1 --location eastus2 [--image-tag v1.4.0] [--profile demo|reference|free-trial]
 #                       [--llm replay|openai [--llm-base-url https://host/v1] [--llm-model gpt-4.1-mini]]
-#                       [--openai-location eastus2] [--public-open] [--allowed-ips 198.51.100.0/24,...]
+#                       [--openai-location eastus2] [--public-open] [--allowed-ips 198.51.100.0/24,...] [--demo-passwords]
 #                       [--auth-server] [--mcp] [--stack python|dotnet] [--image-source ghcr|acr] [--build-from-source] [--dry-run]
 #
 # Defaults: demo profile, frontend reachable only from this machine's public IP, gpt-5.1, pinned image tag
@@ -30,7 +30,7 @@ source scripts/azure/lib/common.sh
 
 ENV_NAME="" LOCATION="" OPENAI_LOCATION="" PROFILE="demo" IMAGE_TAG_ARG="" PUBLIC_ACCESS_ARG="restricted"
 ALLOWED_IPS_ARG="" AUTH_SERVER=false MCP=false STACK=python IMAGE_SOURCE_ARG=auto BUILD_FROM_SOURCE=false
-LLM="" LLM_BASE_URL="" LLM_MODEL="" PREVIEW=false
+LLM="" LLM_BASE_URL="" LLM_MODEL="" PREVIEW=false DEMO_PASSWORDS=false
 while [ $# -gt 0 ]; do
     case "$1" in
         --env) ENV_NAME="$2"; shift 2 ;;
@@ -46,6 +46,7 @@ while [ $# -gt 0 ]; do
         --image-source) IMAGE_SOURCE_ARG="$2"; shift 2 ;;
         --build-from-source) BUILD_FROM_SOURCE=true; shift ;;
         --preview) PREVIEW=true; shift ;;
+        --demo-passwords) DEMO_PASSWORDS=true; shift ;;
         --llm) LLM="$2"; shift 2 ;;
         --llm-base-url) LLM_BASE_URL="$2"; shift 2 ;;
         --llm-model) LLM_MODEL="$2"; shift 2 ;;
@@ -115,6 +116,12 @@ scripts/azure/prereqs.sh "${prereq_args[@]}"
 settings=("AZURE_LOCATION=$LOCATION" "DEPLOY_PROFILE=$PROFILE" "IMAGE_TAG=$image_tag" "PUBLIC_ACCESS=$PUBLIC_ACCESS_ARG"
     "ALLOWED_IPS=$ALLOWED_IPS_ARG" "DEPLOY_AUTH_SERVER=$AUTH_SERVER" "DEPLOY_MCP=$MCP" "AZURE_OPENAI_LOCATION=${OPENAI_LOCATION:-$LOCATION}"
     "DEPLOY_STACK=$STACK" "IMAGE_SOURCE=$IMAGE_SOURCE_ARG" "BUILD_FROM_SOURCE=$BUILD_FROM_SOURCE")
+# Every run states these explicitly. A value left in the azd environment by an earlier run (for example DEPLOY_OPENAI=false
+# from an --llm run) used to carry over and silently skip Foundry on the next run.
+settings+=("SEED_DEMO_PASSWORDS=$DEMO_PASSWORDS")
+if [ -z "$LLM" ]; then
+    settings+=("DEPLOY_OPENAI=true" "EXTERNAL_LLM_PROVIDER=replay")
+fi
 if [ -n "$LLM" ]; then
     settings+=("DEPLOY_OPENAI=false" "EXTERNAL_LLM_PROVIDER=$LLM")
     if [ "$LLM" = openai ]; then
@@ -138,6 +145,7 @@ settings+=("AZURE_SUBSCRIPTION_ID=$subscription_id")
 if [ "$AZURE_DRY_RUN" = "1" ]; then
     run azd env new "$ENV_NAME" --location "$LOCATION" --subscription "$subscription_id" --no-prompt
     for kv in "${settings[@]}"; do run azd env set "${kv%%=*}" "${kv#*=}"; done
+    log "secrets are generated into the azd environment before provision (ensure_azure_secrets), never printed"
     if [ "$PREVIEW" = true ]; then
         run bash scripts/azure/preprovision.sh
         run azd provision --preview --environment "$ENV_NAME" --no-prompt
@@ -163,6 +171,15 @@ fi
 azd env select "$ENV_NAME"
 azd env set AZURE_LOCATION "$LOCATION"
 for kv in "${settings[@]}"; do azd env set "${kv%%=*}" "${kv#*=}"; done
+
+# Generate every secret BEFORE `azd provision`, with the same function the preprovision hook uses. azd resolves the template
+# parameters before it runs hooks, so a hook-only generator had two faults: seedStaffPassword (a secure parameter with no
+# default) stopped a first run with "missing required inputs", and the other secrets took the template's random defaults on
+# the first provision and the hook's values on the next, so a re-provision rotated the database password away from the one
+# Key Vault and the apps held (sign-in then failed with a password authentication error). Idempotent: existing values stay.
+# shellcheck source=scripts/azure/lib/secrets.sh
+source scripts/azure/lib/secrets.sh
+ensure_azure_secrets >/dev/null || die "could not generate secrets (need openssl or python3)"
 
 if [ "$PREVIEW" = true ]; then
     bash scripts/azure/preprovision.sh

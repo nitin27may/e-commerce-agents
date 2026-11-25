@@ -121,6 +121,9 @@
     },
     "seedStaffPassword": {
       "value": "${SEED_STAFF_PASSWORD}"
+    },
+    "seedDemoPasswords": {
+      "value": "${SEED_DEMO_PASSWORDS=false}"
     }
   }
 }

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.49.2.45890",
-      "templateHash": "6663077745990006240"
+      "templateHash": "6577800043583374195"
     }
   },
   "parameters": {
@@ -290,6 +290,13 @@
       "minLength": 12,
       "metadata": {
         "description": "Login password of the seeded admin, support and seller accounts. Required: nothing generates it for you without azd."
+      }
+    },
+    "seedDemoPasswords": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Demo only. True seeds the documented demo passwords (admin123, support123, seller123) instead of the generated staff password. Honoured only while publicAccess is restricted; with open access it is ignored and the generated password is used."
       }
     },
     "stack": {
@@ -2851,6 +2858,9 @@
         },
         "mode": "Incremental",
         "parameters": {
+          "seedDemoPasswords": {
+            "value": "[and(parameters('seedDemoPasswords'), equals(parameters('publicAccess'), 'restricted'))]"
+          },
           "location": {
             "value": "[parameters('location')]"
           },
@@ -2937,7 +2947,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.49.2.45890",
-              "templateHash": "8221332088097290059"
+              "templateHash": "174349622026623455"
             }
           },
           "functions": [
@@ -3181,6 +3191,13 @@
               ],
               "metadata": {
                 "description": "restricted: the frontend accepts only allowedIpRanges (default). open: anyone, which is an open spend tap."
+              }
+            },
+            "seedDemoPasswords": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "True: the db-init job gets no SEED_STAFF_PASSWORD, so the seeder uses the documented demo passwords."
               }
             },
             "allowedIpRanges": {
@@ -3775,9 +3792,7 @@
                   "env": {
                     "value": "[concat(variables('batchEnv'), __bicep.clientIdEnv(parameters('identityClientId')), createArray(createObject('name', 'OTEL_SERVICE_NAME', 'value', 'ecommerce.db-init')))]"
                   },
-                  "secretEnv": {
-                    "value": "[concat(variables('batchSecretEnv'), createArray(createObject('env', 'SEED_STAFF_PASSWORD', 'secret', 'seed-staff-password')))]"
-                  }
+                  "secretEnv": "[if(parameters('seedDemoPasswords'), createObject('value', variables('batchSecretEnv')), createObject('value', concat(variables('batchSecretEnv'), createArray(createObject('env', 'SEED_STAFF_PASSWORD', 'secret', 'seed-staff-password')))))]"
                 },
                 "template": {
                   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",

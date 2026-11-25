@@ -122,5 +122,10 @@ if [ "$AZURE_DRY_RUN" = "1" ]; then
     exit 0
 fi
 export FRONTEND_URL="$frontend_url" AZURE_RESOURCE_GROUP="$resource_group" DB_INIT_JOB_NAME="$job_name"
-export E2E_STAFF_PASSWORD="${E2E_STAFF_PASSWORD:-$(env_get SEED_STAFF_PASSWORD)}"
+# --demo-passwords seeds the documented demo passwords, so the staff accounts use admin123 and friends, not SEED_STAFF_PASSWORD.
+if [ "$(env_get SEED_DEMO_PASSWORDS)" = "true" ]; then
+    export E2E_STAFF_PASSWORD="${E2E_STAFF_PASSWORD:-admin123}"
+else
+    export E2E_STAFF_PASSWORD="${E2E_STAFF_PASSWORD:-$(env_get SEED_STAFF_PASSWORD)}"
+fi
 scripts/azure/smoke.sh --quick

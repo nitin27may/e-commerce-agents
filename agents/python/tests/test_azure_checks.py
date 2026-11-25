@@ -208,3 +208,63 @@ def test_prereqs_dry_run_waits_for_providers_and_checks_azd_sign_in() -> None:
     assert "az provider register --namespace Microsoft.Network" in result.stderr
     text = (REPO_ROOT / "scripts/azure/prereqs.sh").read_text(encoding="utf-8")
     assert "azd auth login --check-status" in text and "PROVIDER_WAIT_SECONDS" in text
+
+
+def _azure_up_dry_run(*extra: str) -> str:
+    assert BASH is not None
+    result = subprocess.run(
+        [
+            BASH,
+            "scripts/azure-up.sh",
+            "--env",
+            "t1",
+            "--location",
+            "centralus",
+            "--profile",
+            "free-trial",
+            "--image-tag",
+            "sha-0123abc",
+            "--dry-run",
+            *extra,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=90,
+        cwd=REPO_ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout + result.stderr
+
+
+def test_every_azure_up_run_states_the_foundry_and_password_settings() -> None:
+    """A value left in the azd environment by an earlier run must not carry over.
+
+    A first run with --llm replay stored DEPLOY_OPENAI=false; the next run without --llm skipped Foundry
+    silently because nothing set it back. Every run now writes both settings.
+    """
+    out = _azure_up_dry_run()
+    assert "azd env set DEPLOY_OPENAI true" in out
+    assert "azd env set EXTERNAL_LLM_PROVIDER replay" in out
+    assert "azd env set SEED_DEMO_PASSWORDS false" in out
+    assert "DEPLOY_OPENAI false" not in out
+
+
+def test_azure_up_llm_replay_skips_foundry_and_demo_passwords_flag_is_explicit() -> None:
+    replay = _azure_up_dry_run("--llm", "replay")
+    assert "azd env set DEPLOY_OPENAI false" in replay
+    demo = _azure_up_dry_run("--demo-passwords")
+    assert "azd env set SEED_DEMO_PASSWORDS true" in demo
+
+
+def test_azure_up_generates_secrets_before_the_first_provision() -> None:
+    """azd resolves template parameters before it runs hooks, so generation cannot live only in preprovision.
+
+    Hook-only generation stopped a first run on the staff password (no template default) and let the first provision use
+    the template's random defaults while later runs used the hook's values, which rotated the database password.
+    """
+    text = (REPO_ROOT / "scripts/azure-up.sh").read_text(encoding="utf-8")
+    selected = text.index("azd env select")
+    generate = text.index("ensure_azure_secrets", selected)
+    first_provision = text.index("azd provision --no-prompt", selected)
+    assert generate < first_provision

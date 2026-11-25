@@ -72,7 +72,11 @@ if [ -n "$ENV_NAME" ] && [ "$AZURE_DRY_RUN" != "1" ] && have azd; then azd env s
 RG="${RG:-$(envv AZURE_RESOURCE_GROUP)}"
 [ -n "$RG" ] || RG="${ENV_NAME:+rg-$ENV_NAME}"
 FRONTEND_URL="${FRONTEND_URL:-$(envv FRONTEND_URL)}"
-STAFF_PASSWORD="${E2E_STAFF_PASSWORD:-$(envv SEED_STAFF_PASSWORD)}"
+if [ "$(envv SEED_DEMO_PASSWORDS)" = "true" ]; then
+    STAFF_PASSWORD="${E2E_STAFF_PASSWORD:-admin123}"   # --demo-passwords: the documented demo password
+else
+    STAFF_PASSWORD="${E2E_STAFF_PASSWORD:-$(envv SEED_STAFF_PASSWORD)}"
+fi
 if [ "$AZURE_DRY_RUN" = "1" ]; then
     RG="${RG:-rg-example}"; FRONTEND_URL="${FRONTEND_URL:-https://ca-frontend.example}"; STAFF_PASSWORD="${STAFF_PASSWORD:-example}"
     log "dry run: the checks below would run against $FRONTEND_URL in $RG"

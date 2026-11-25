@@ -65,6 +65,8 @@ param costBudgetUsdPerRun string = '0.50'
 @description('restricted: the frontend accepts only allowedIpRanges (default). open: anyone, which is an open spend tap.')
 @allowed(['restricted', 'open'])
 param publicAccess string = 'restricted'
+@description('True: the db-init job gets no SEED_STAFF_PASSWORD, so the seeder uses the documented demo passwords.')
+param seedDemoPasswords bool = false
 @description('CIDR ranges allowed to reach the frontend when publicAccess is restricted.')
 param allowedIpRanges array = []
 
@@ -239,7 +241,7 @@ module dbInit 'db-init-job.bicep' = {
     registryServer: registryServer
     keyVaultUri: keyVaultUri
     env: concat(batchEnv, clientIdEnv(identityClientId), [{ name: 'OTEL_SERVICE_NAME', value: 'ecommerce.db-init' }])
-    secretEnv: concat(batchSecretEnv, [{ env: 'SEED_STAFF_PASSWORD', secret: 'seed-staff-password' }])
+    secretEnv: seedDemoPasswords ? batchSecretEnv : concat(batchSecretEnv, [{ env: 'SEED_STAFF_PASSWORD', secret: 'seed-staff-password' }])
   }
 }
 

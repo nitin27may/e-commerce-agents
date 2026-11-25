@@ -100,6 +100,8 @@ param authSigningKeyEncryptionKey string = '${newGuid()}${newGuid()}'
 @minLength(12)
 @description('Login password of the seeded admin, support and seller accounts. Required: nothing generates it for you without azd.')
 param seedStaffPassword string
+@description('Demo only. True seeds the documented demo passwords (admin123, support123, seller123) instead of the generated staff password. Honoured only while publicAccess is restricted; with open access it is ignored and the generated password is used.')
+param seedDemoPasswords bool = false
 
 // ===== BEGIN INFRA-B: reference profile, image source, stack =====
 @allowed(['python', 'dotnet'])
@@ -337,6 +339,7 @@ module apps 'modules/apps.bicep' = if (deployApps) {
   name: 'apps'
   dependsOn: [derivedSecrets, privateEndpoints]
   params: {
+    seedDemoPasswords: seedDemoPasswords && publicAccess == 'restricted'
     location: location
     tags: tags
     environmentId: cae.outputs.id
