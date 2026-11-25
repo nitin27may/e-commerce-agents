@@ -246,7 +246,8 @@ def test_every_azure_up_run_states_the_foundry_and_password_settings() -> None:
     out = _azure_up_dry_run()
     assert "azd env set DEPLOY_OPENAI true" in out
     assert "azd env set EXTERNAL_LLM_PROVIDER replay" in out
-    assert "azd env set SEED_DEMO_PASSWORDS false" in out
+    assert "azd env set SEED_DEMO_PASSWORDS true" in out, "the documented demo accounts are the default"
+    assert "azd env set SEED_DEMO_PASSWORDS false" in _azure_up_dry_run("--generated-passwords")
     assert "DEPLOY_OPENAI false" not in out
 
 
@@ -255,6 +256,7 @@ def test_azure_up_llm_replay_skips_foundry_and_demo_passwords_flag_is_explicit()
     assert "azd env set DEPLOY_OPENAI false" in replay
     demo = _azure_up_dry_run("--demo-passwords")
     assert "azd env set SEED_DEMO_PASSWORDS true" in demo
+    assert "azd env set SEED_DEMO_PASSWORDS false" in _azure_up_dry_run("--generated-passwords")
 
 
 def test_azure_up_generates_secrets_before_the_first_provision() -> None:

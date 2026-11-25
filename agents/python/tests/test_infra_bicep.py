@@ -7,6 +7,7 @@ binary both work; CI installs it in .github/workflows/infra-offline.yml.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -1095,18 +1096,30 @@ def test_azure_up_accepts_only_an_immutable_image_tag(tag: str, accepted: bool) 
 
 
 @needs_bash
-def test_azure_up_free_trial_needs_an_explicit_image_tag() -> None:
+def test_azure_up_needs_no_arguments_and_every_default_can_be_overridden() -> None:
+    """`scripts/azure-up.sh` alone works; a flag or an ECA_* variable overrides each default (flag over variable)."""
     assert BASH is not None
-    result = subprocess.run(
-        [BASH, "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--profile", "free-trial", "--dry-run"],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-        cwd=REPO_ROOT,
-    )
-    assert result.returncode != 0
-    assert "--image-tag" in result.stdout + result.stderr
+
+    def run(*args: str, **env: str) -> str:
+        result = subprocess.run(
+            [BASH, "scripts/azure-up.sh", "--dry-run", *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=90,
+            cwd=REPO_ROOT,
+            env={**os.environ, **env},
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout + result.stderr
+
+    plain = run()
+    assert "profile=free-trial" in plain and "demo-passwords=true" in plain and "verify=true" in plain
+    assert "defaulted (override with the flag or ECA_* variable)" in plain
+    by_variable = run(ECA_ENV="mine", ECA_LOCATION="westus3", ECA_IMAGE_TAG="sha-abcdef1")
+    assert "env=mine location=westus3" in by_variable and "image=sha-abcdef1" in by_variable
+    flag_wins = run("--env", "flagenv", "--generated-passwords", "--no-verify", ECA_ENV="mine")
+    assert "env=flagenv" in flag_wins and "demo-passwords=false" in flag_wins and "verify=false" in flag_wins
 
 
 @needs_bash
