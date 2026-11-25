@@ -268,3 +268,45 @@ def test_azure_up_generates_secrets_before_the_first_provision() -> None:
     generate = text.index("ensure_azure_secrets", selected)
     first_provision = text.index("azd provision --no-prompt", selected)
     assert generate < first_provision
+
+
+def test_a_missing_azd_key_reads_as_empty_and_secrets_are_generated(tmp_path: Path) -> None:
+    """azd 1.39 prints 'key not found' on stdout and exits 1; that text must not count as a value.
+
+    env_get used `azd env get-value ... || true`, so every unset secret looked present and ensure_azure_secrets
+    generated nothing: the first provision then took the template's random defaults.
+    """
+    assert BASH is not None
+    store = tmp_path / "store.env"
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    fake = bindir / "azd"
+    fake.write_text(
+        "#!/usr/bin/env bash\n"
+        'store="$AZD_FAKE_STORE"\n'
+        'if [ "$1 $2" = "env get-value" ]; then\n'
+        '  v="$(grep -E "^$3=" "$store" 2>/dev/null | tail -n1 | cut -d= -f2- | sed -e \'s/^"//\' -e \'s/"$//\')"\n'
+        '  if [ -n "$v" ]; then printf "%s" "$v"; exit 0; fi\n'
+        '  printf "\\nERROR: key not found in environment values: \'"$3"\'\\n"; exit 1\n'
+        "fi\n"
+        'if [ "$1 $2" = "env set" ]; then printf \'%s="%s"\\n\' "$3" "$4" >> "$store"; exit 0; fi\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "AZURE_DRY_RUN": "0", "AZD_FAKE_STORE": str(store)}
+    for name in ("AZURE_SECRET_STORE_FILE", "SEED_STAFF_PASSWORD", "POSTGRES_ADMIN_PASSWORD", "JWT_SECRET"):
+        env.pop(name, None)
+    snippet = (
+        "set -uo pipefail; source scripts/azure/lib/common.sh; source scripts/azure/lib/secrets.sh; "
+        'echo "missing=[$(env_get NO_SUCH_KEY)]"; generated="$(ensure_azure_secrets)"; echo "$generated"'
+    )
+    result = subprocess.run(
+        [BASH, "-c", snippet], capture_output=True, text=True, check=False, timeout=60, cwd=REPO_ROOT, env=env
+    )
+    assert result.returncode == 0, result.stderr
+    assert "missing=[]" in result.stdout
+    for name in ("POSTGRES_ADMIN_PASSWORD", "JWT_SECRET", "AGENT_SHARED_SECRET", "SEED_STAFF_PASSWORD"):
+        assert name in result.stdout, f"{name} was not generated: {result.stdout}"
+    stored = store.read_text(encoding="utf-8")
+    assert "SEED_STAFF_PASSWORD=" in stored and "ERROR" not in stored
