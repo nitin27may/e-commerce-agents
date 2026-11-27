@@ -35,10 +35,24 @@ const expectGone = (role: string, name?: string) =>
   );
 
 describe("PromptInputBox — specialist picker", () => {
+  it("is hidden unless asked for: routing to a specialist is a Lab control, not a shopper's", () => {
+    render(<PromptInputBox onSend={() => {}} />);
+    expect(screen.queryByRole("button", { name: /^Specialist/ })).not.toBeInTheDocument();
+  });
+
+  it("sends null when the picker is hidden", async () => {
+    const onSend = vi.fn();
+    const user = userEvent.setup();
+    render(<PromptInputBox onSend={onSend} />);
+    await user.type(screen.getByRole("textbox"), "hello{Enter}");
+    expect(onSend).toHaveBeenCalledWith("hello", null);
+  });
+
+
   it("shows one collapsed control, not a chip per mode", () => {
     // The regression this file exists for: six always-visible chips took the
     // top third of the composer to expose a control most turns never touch.
-    render(<PromptInputBox onSend={() => {}} />);
+    render(<PromptInputBox onSend={() => {}} showSpecialistPicker />);
 
     expect(screen.getByRole("button", { name: /^Specialist/ })).toHaveTextContent("Auto");
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
@@ -49,7 +63,7 @@ describe("PromptInputBox — specialist picker", () => {
 
   it("lists every mode once opened, with the active one marked selected", async () => {
     const user = userEvent.setup();
-    render(<PromptInputBox onSend={() => {}} />);
+    render(<PromptInputBox onSend={() => {}} showSpecialistPicker />);
 
     const listbox = await openPicker(user);
     const options = within(listbox).getAllByRole("option");
@@ -60,7 +74,7 @@ describe("PromptInputBox — specialist picker", () => {
 
   it("collapses back to the chosen mode after a selection", async () => {
     const user = userEvent.setup();
-    render(<PromptInputBox onSend={() => {}} />);
+    render(<PromptInputBox onSend={() => {}} showSpecialistPicker />);
 
     const listbox = await openPicker(user);
     await user.click(within(listbox).getByRole("option", { name: "Orders" }));
@@ -73,7 +87,7 @@ describe("PromptInputBox — specialist picker", () => {
     // The placeholder is the only on-screen hint about what a pinned mode
     // expects, now that the labels are behind a menu.
     const user = userEvent.setup();
-    render(<PromptInputBox onSend={() => {}} />);
+    render(<PromptInputBox onSend={() => {}} showSpecialistPicker />);
 
     const listbox = await openPicker(user);
     await user.click(within(listbox).getByRole("option", { name: "Pricing" }));
@@ -85,7 +99,7 @@ describe("PromptInputBox — specialist picker", () => {
     // A popover that only closes via its own trigger traps whoever opened it
     // by accident — the most likely way this one gets opened.
     const user = userEvent.setup();
-    render(<PromptInputBox onSend={() => {}} />);
+    render(<PromptInputBox onSend={() => {}} showSpecialistPicker />);
 
     await openPicker(user);
     await user.keyboard("{Escape}");
@@ -101,7 +115,7 @@ describe("PromptInputBox — specialist picker", () => {
     // "order-management" fails server-side, well away from this component.
     const onSend = vi.fn();
     const user = userEvent.setup();
-    render(<PromptInputBox onSend={onSend} />);
+    render(<PromptInputBox onSend={onSend} showSpecialistPicker />);
 
     const listbox = await openPicker(user);
     await user.click(within(listbox).getByRole("option", { name: "Orders" }));
@@ -113,7 +127,7 @@ describe("PromptInputBox — specialist picker", () => {
   it("sends null for Auto so the orchestrator routes", async () => {
     const onSend = vi.fn();
     const user = userEvent.setup();
-    render(<PromptInputBox onSend={onSend} />);
+    render(<PromptInputBox onSend={onSend} showSpecialistPicker />);
 
     await user.type(screen.getByRole("textbox"), "hello{Enter}");
 

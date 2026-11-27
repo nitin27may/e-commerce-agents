@@ -21,7 +21,7 @@ import { ModeSwitcher } from "@/components/chat/mode-switcher";
 import { ModeComparison } from "@/components/chat/mode-comparison";
 import { Badge } from "@/components/ui/badge";
 import { DemoResetButton, DemoTourChips, ReplayMissCallout } from "@/components/chat/demo-tour-chips";
-import type { DemoTourChip } from "@/lib/demo-tour";
+import { useDemoTour, type DemoTourChip } from "@/lib/demo-tour";
 import { QUICK_PROMPTS } from "@/lib/scenarios";
 import { Button } from "@/components/ui/button";
 import { PromptInputBox } from "@/components/ui/ai-prompt-box";
@@ -48,7 +48,6 @@ import {
   Check,
   RotateCcw,
   Share2,
-  Sparkles,
 } from "lucide-react";
 import { ApprovalCard } from "@/components/chat/approval-card";
 import { DEMO_SCENARIOS } from "@/lib/scenarios";
@@ -151,14 +150,19 @@ function ThinkingIndicator({ label }: { label: string }) {
           <BotIcon className="size-3.5" />
         </AvatarFallback>
       </Avatar>
-      <motion.div
-        className="flex items-center gap-1.5 text-xs text-muted-foreground"
-        animate={{ opacity: [0.5, 1, 0.5] }}
-        transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
-      >
-        <Sparkles className="size-3 text-primary/70" />
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <motion.span
+              key={i}
+              className="size-1.5 rounded-full bg-muted-foreground/60"
+              animate={{ opacity: [0.3, 1, 0.3] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut", delay: i * 0.15 }}
+            />
+          ))}
+        </span>
         <span>{label}</span>
-      </motion.div>
+      </div>
     </div>
   );
 }
@@ -195,7 +199,8 @@ function MessageActions({
   };
 
   return (
-    <div className="mt-1.5 flex items-center gap-3">
+    // Quiet until the message is hovered or focused: the answer is the point, not its toolbar.
+    <div className="mt-1 flex items-center gap-3 opacity-60 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
       <button
         type="button"
         onClick={handleCopy}
@@ -336,6 +341,8 @@ function MessageContent({ content }: { content: string }) {
 export function ChatView({ devView = false }: { devView?: boolean }) {
   const { isAuthenticated } = useAuth();
   const { itemCount } = useCart();
+  // Loaded here as well as in the chip components so a replay-miss notice has its chips on first paint.
+  const tour = useDemoTour();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<
@@ -386,7 +393,7 @@ export function ChatView({ devView = false }: { devView?: boolean }) {
 
     return deriveSuggestions(
       lastAssistant?.content,
-      DEMO_SCENARIOS.slice(0, 4).map((s) => ({ label: s.label, prompt: s.prompt }))
+      DEMO_SCENARIOS.slice(0, 4).map((s) => ({ label: s.chipLabel, prompt: s.prompt }))
     );
   }, [messages]);
   // Per-message abort controller. New send aborts any in-flight stream;
@@ -800,18 +807,21 @@ export function ChatView({ devView = false }: { devView?: boolean }) {
                 Ask about products, orders, pricing, reviews, stock, or
                 anything else, in your own words.
               </p>
-              <div className="mt-2 flex flex-wrap justify-center gap-2">
-                {QUICK_PROMPTS.map((s) => (
-                  <button
-                    key={s.label}
-                    type="button"
-                    onClick={() => sendMessage(s.prompt)}
-                    className="rounded-full border bg-card px-3 py-1.5 text-sm text-foreground/80 transition-colors hover:border-primary/40 hover:bg-accent hover:text-foreground"
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
+              {/* A demo serves recorded answers only for its tour prompts, so offering others would only lead to misses. */}
+              {!tour && (
+                <div className="mt-2 flex flex-wrap justify-center gap-2">
+                  {QUICK_PROMPTS.map((s) => (
+                    <button
+                      key={s.label}
+                      type="button"
+                      onClick={() => sendMessage(s.prompt)}
+                      className="rounded-full border bg-card px-3 py-1.5 text-sm text-foreground/80 transition-colors hover:border-primary/40 hover:bg-accent hover:text-foreground"
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <DemoTourChips onPick={handlePickChip} disabled={isResponding} />
             </div>
           ) : (
@@ -819,7 +829,7 @@ export function ChatView({ devView = false }: { devView?: boolean }) {
               {messages.map((msg) => (
                 <div
                   key={msg.id}
-                  className={`mb-4 flex items-start gap-2.5 ${
+                  className={`group/message mb-5 flex items-start gap-2.5 ${
                     msg.role === "user" ? "flex-row-reverse" : "flex-row"
                   }`}
                 >
@@ -839,17 +849,18 @@ export function ChatView({ devView = false }: { devView?: boolean }) {
                     </AvatarFallback>
                   </Avatar>
 
+                  {/* The user's turn is a bubble; the assistant's sits on the page, so its cards are not a box in a box. */}
                   <div
                     role={
                       msg.role === "assistant" && msg.content.startsWith("Error: ")
                         ? "alert"
                         : undefined
                     }
-                    className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                    className={
                       msg.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-foreground"
-                    }`}
+                        ? "max-w-[80%] rounded-2xl bg-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground"
+                        : "min-w-0 flex-1 pt-1 text-sm leading-relaxed text-foreground"
+                    }
                   >
                     {msg.role === "assistant" && msg.replayMiss ? (
                       <ReplayMissCallout
@@ -967,6 +978,7 @@ export function ChatView({ devView = false }: { devView?: boolean }) {
             <PromptInputBox
               onSend={(message, agentMode) => sendMessage(message, agentMode)}
               isLoading={isResponding}
+              showSpecialistPicker={devView}
               // The empty state already lists the quick prompts above; the same chips in the composer doubled them.
               suggestions={messages.length > 0 ? suggestions : []}
             />

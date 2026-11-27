@@ -4,6 +4,8 @@ import { useState } from "react";
 import { CheckIcon, XIcon, Loader2Icon, ShieldAlertIcon } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { TONE_TEXT_CLASS } from "@/components/ui/status-badge";
+import { CardAction } from "./chat-card";
 
 /**
  * The approve/reject control for a run that paused on a human, rendered
@@ -75,7 +77,7 @@ export function ApprovalCard({ runId, onResolved }: ApprovalCardProps) {
     return (
       <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
         {done ? <CheckIcon className="size-3.5" /> : <XIcon className="size-3.5" />}
-        {done ? "Approved" : "Rejected"} — the workflow resumed from its checkpoint.
+        {done ? "Approved. Continuing." : "Rejected."}
       </div>
     );
   }
@@ -83,7 +85,7 @@ export function ApprovalCard({ runId, onResolved }: ApprovalCardProps) {
   if (!isAdmin) {
     return (
       <div role="alert" className="mt-2.5 rounded-lg border border-warning/40 bg-warning/5 p-2.5">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning">
+        <div className={`flex items-center gap-1.5 text-xs font-medium ${TONE_TEXT_CLASS.warning}`}>
           <ShieldAlertIcon className="size-3.5 shrink-0" />
           Awaiting staff review
         </div>
@@ -96,38 +98,29 @@ export function ApprovalCard({ runId, onResolved }: ApprovalCardProps) {
 
   return (
     <div role="alert" className="mt-2.5 rounded-lg border border-warning/40 bg-warning/5 p-2.5">
-      <div className="flex items-center gap-1.5 text-xs font-medium text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning">
+      <div className={`flex items-center gap-1.5 text-xs font-medium ${TONE_TEXT_CLASS.warning}`}>
         <ShieldAlertIcon className="size-3.5 shrink-0" />
         This return needs your approval before it can continue
       </div>
 
       <div className="mt-2 flex items-center gap-2">
-        <button
-          type="button"
+        <CardAction
+          variant="primary"
+          icon={pending === "approve" ? Loader2Icon : CheckIcon}
           onClick={() => resolve(true)}
           disabled={pending !== null}
-          className="inline-flex h-7 items-center gap-1 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+          className={pending === "approve" ? "[&_svg]:animate-spin" : undefined}
         >
-          {pending === "approve" ? (
-            <Loader2Icon className="size-3 animate-spin" />
-          ) : (
-            <CheckIcon className="size-3" />
-          )}
           Approve
-        </button>
-        <button
-          type="button"
+        </CardAction>
+        <CardAction
+          icon={pending === "reject" ? Loader2Icon : XIcon}
           onClick={() => resolve(false)}
           disabled={pending !== null}
-          className="inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-xs font-medium transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+          className={pending === "reject" ? "[&_svg]:animate-spin" : undefined}
         >
-          {pending === "reject" ? (
-            <Loader2Icon className="size-3 animate-spin" />
-          ) : (
-            <XIcon className="size-3" />
-          )}
           Reject
-        </button>
+        </CardAction>
       </div>
 
       {error && <p role="alert" className="mt-1.5 text-xs text-destructive">{error}</p>}

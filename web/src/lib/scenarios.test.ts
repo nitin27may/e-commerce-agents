@@ -15,6 +15,9 @@ describe("DEMO_SCENARIOS", () => {
     for (const s of DEMO_SCENARIOS) {
       expect(s.id, `${s.label} missing id`).toBeTruthy();
       expect(s.label, `${s.id} missing label`).toBeTruthy();
+      expect(s.chipLabel, `${s.id} missing chipLabel`).toBeTruthy();
+      // A chip is what the shopper would say, so it never reads as a feature name.
+      expect(s.chipLabel, `${s.id} chip repeats the feature name`).not.toBe(s.label);
       expect(s.description, `${s.id} missing description`).toBeTruthy();
       expect(s.prompt, `${s.id} missing prompt`).toBeTruthy();
       // Customer-facing: a scenario says what the shopper gets, never which agent does it.
@@ -30,10 +33,10 @@ describe("DEMO_SCENARIOS", () => {
 });
 
 describe("QUICK_PROMPTS", () => {
-  it("exposes the first 4 scenarios as plain label/prompt pairs", () => {
+  it("exposes the first 4 scenarios as chip-label/prompt pairs", () => {
     expect(QUICK_PROMPTS).toHaveLength(4);
     for (let i = 0; i < 4; i++) {
-      expect(QUICK_PROMPTS[i].label).toBe(DEMO_SCENARIOS[i].label);
+      expect(QUICK_PROMPTS[i].label).toBe(DEMO_SCENARIOS[i].chipLabel);
       expect(QUICK_PROMPTS[i].prompt).toBe(DEMO_SCENARIOS[i].prompt);
     }
   });

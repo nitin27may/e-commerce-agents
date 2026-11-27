@@ -21,6 +21,8 @@ import {
 export interface Scenario {
   id: string;
   label: string;
+  /** What a shopper would tap: the request in their words, for prompt chips. `label` names the feature. */
+  chipLabel: string;
   /** One-line description of what this demonstrates. */
   description: string;
   /** Full prompt sent to chat. */
@@ -32,6 +34,7 @@ export const DEMO_SCENARIOS: Scenario[] = [
   {
     id: "product-search",
     label: "Product Search",
+    chipLabel: "Find headphones under $300",
     description: "Find products by what you need and what you want to spend",
     prompt: "Find me wireless headphones under $300 with good noise cancellation",
     icon: Search,
@@ -39,6 +42,7 @@ export const DEMO_SCENARIOS: Scenario[] = [
   {
     id: "comparison",
     label: "Side-by-Side Comparison",
+    chipLabel: "Sony or AirPods Max?",
     description: "Two products side by side: specs, price and reviews",
     prompt: "Compare the Sony WH-1000XM5 with AirPods Max",
     icon: GitCompare,
@@ -46,6 +50,7 @@ export const DEMO_SCENARIOS: Scenario[] = [
   {
     id: "order-tracking",
     label: "Order Tracking",
+    chipLabel: "Where's my order?",
     description: "Where your order is and when it arrives",
     prompt: "Where's my latest order?",
     icon: Package,
@@ -53,6 +58,7 @@ export const DEMO_SCENARIOS: Scenario[] = [
   {
     id: "return-flow",
     label: "Return Flow",
+    chipLabel: "Start a return",
     description: "Check whether an order can go back, and start the return",
     prompt: "I want to return my last order",
     icon: RotateCcw,
@@ -60,6 +66,7 @@ export const DEMO_SCENARIOS: Scenario[] = [
   {
     id: "price-check",
     label: "Price Intelligence",
+    chipLabel: "Is the MX Master 3S a good deal?",
     description: "Whether now is a good time to buy",
     prompt: "Is the Logitech MX Master 3S a good deal right now?",
     icon: TrendingDown,
@@ -67,6 +74,7 @@ export const DEMO_SCENARIOS: Scenario[] = [
   {
     id: "review-analysis",
     label: "Review Analysis",
+    chipLabel: "Reviews of the Dyson V15",
     description: "What buyers actually say, in one summary",
     prompt: "What do people think about the Dyson V15?",
     icon: Star,
@@ -74,6 +82,7 @@ export const DEMO_SCENARIOS: Scenario[] = [
   {
     id: "stock-check",
     label: "Stock & Fulfillment",
+    chipLabel: "Is the Dyson V15 in stock?",
     description: "In stock or not, and how fast it can ship",
     prompt: "Is the Dyson V15 Detect in stock?",
     icon: Warehouse,
@@ -81,6 +90,7 @@ export const DEMO_SCENARIOS: Scenario[] = [
   {
     id: "multi-intent",
     label: "Multi-Intent",
+    chipLabel: "Return and replace a jacket",
     description: "Several questions in one message",
     prompt: "Return my jacket and find me a warmer one under $200",
     icon: Shuffle,
@@ -88,11 +98,11 @@ export const DEMO_SCENARIOS: Scenario[] = [
 ];
 
 /**
- * The first four scenarios as plain label/prompt pairs — used by the quick-
- * prompt chip row on the home dashboard (backward-compatible shape).
+ * The first four scenarios as chips: the shopper's wording as the label, the
+ * full prompt behind it. Used by the home dashboard and the empty chat.
  */
-export const QUICK_PROMPTS = DEMO_SCENARIOS.slice(0, 4).map(({ label, prompt }) => ({
-  label,
+export const QUICK_PROMPTS = DEMO_SCENARIOS.slice(0, 4).map(({ chipLabel, prompt }) => ({
+  label: chipLabel,
   prompt,
 }));
 
