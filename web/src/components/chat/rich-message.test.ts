@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseContent, type Segment } from "./rich-message";
+import { dropRestatedList, parseContent, stripUnclosedFence, type Segment } from "./rich-message";
 
 const PRODUCT = {
   name: "Sony WH-1000XM5",
@@ -217,5 +217,87 @@ describe("parseContent — never renders raw JSON (Phase 8.2)", () => {
     expect(textOf(segs)).not.toContain("```");
     expect(textOf(segs)).toContain("Before.");
     expect(textOf(segs)).toContain("After.");
+  });
+});
+
+describe("parseContent — empty payloads (one registry, one rule)", () => {
+  it.each(["order", "return", "checkout", "sentiment", "inventory", "pricing", "product"])(
+    "drops an empty `%s` fence and keeps the text around it",
+    (tag) => {
+      const segs = parseContent(`Before.\n\`\`\`${tag}\n{}\n\`\`\`\nAfter.`);
+      expect(cardTypes(segs)).toEqual([]);
+      expect(textOf(segs)).toContain("Before.");
+      expect(textOf(segs)).toContain("After.");
+      expect(textOf(segs)).not.toContain("{}");
+    },
+  );
+
+  it("still builds an order card from prose, through the same validation", () => {
+    const content =
+      "Here is your order.\n\nOrder ID: 9dee7fee-d86b-5cca-a912-4987f224d562\nStatus: Shipped\nTotal: $1,068.43";
+    expect(cardTypes(parseContent(content))).toEqual(["order"]);
+  });
+});
+
+describe("parseContent — text that restates a card", () => {
+  const shipping = {
+    product_id: "dc9e2baa-8182-58f8-9df1-97d049426ba1",
+    shipping_options: [
+      { carrier: "Standard Shipping", speed_tier: "standard", price: 5.99, delivery_window: "5-7 business days" },
+      { carrier: "Overnight Shipping", speed_tier: "overnight", price: 29.99, delivery_window: "1-1 business days" },
+    ],
+  };
+
+  it("drops a bullet list after an inventory card that repeats its options", () => {
+    const content =
+      "Shipping to the east region:\n\n```inventory\n" + JSON.stringify(shipping) + "\n```\n\n" +
+      "- Standard Shipping: $5.99 (5-7 business days)\n- Overnight Shipping: $29.99 (next business day)\n\n" +
+      "Let me know which you prefer!";
+    const text = textOf(parseContent(content));
+    expect(text).not.toContain("$5.99");
+    expect(text).toContain("Shipping to the east region:");
+    expect(text).toContain("Let me know which you prefer!");
+  });
+
+  it("drops a price/rating list under a product card", () => {
+    const content =
+      "Here it is:\n```product\n" + JSON.stringify(PRODUCT) + "\n```\n" +
+      "- Price: $299.99 (save $50)\n- Rating: 4.7 from 15 reviews\n- Great battery life\n\nWant to add it?";
+    const text = textOf(parseContent(content));
+    expect(text).not.toContain("Rating: 4.7");
+    expect(text).toContain("Want to add it?");
+  });
+
+  it("keeps a list that is analysis rather than a restatement", () => {
+    const content =
+      "Comparison:\n- Sony is lighter and has longer battery life.\n- AirPods Max fits the Apple ecosystem.\n\n" +
+      "```products\n" + JSON.stringify([PRODUCT, PRODUCT_2]) + "\n```";
+    const text = textOf(parseContent(content));
+    expect(text).toContain("Sony is lighter");
+  });
+});
+
+describe("dropRestatedList", () => {
+  it("only removes the list at the edge facing the card", () => {
+    const text = "- $5.99 option\n\nMiddle text.\n\n- $5.99 again";
+    expect(dropRestatedList(text, ["$5.99"], "end")).toBe("- $5.99 option\n\nMiddle text.\n");
+    expect(dropRestatedList(text, ["$5.99"], "start")).toBe("\nMiddle text.\n\n- $5.99 again");
+  });
+
+  it("keeps a list where most items are new information", () => {
+    const text = "- $5.99 option\n- Ships from the east\n- Signature required";
+    expect(dropRestatedList(text, ["$5.99"], "start")).toBe(text);
+  });
+});
+
+describe("stripUnclosedFence", () => {
+  it("hides a half-streamed card fence and reports it pending", () => {
+    expect(stripUnclosedFence('Here you go:\n```product\n{"name": "Son')).toEqual({ content: "Here you go:", pending: true });
+  });
+
+  it("leaves complete fences and plain code blocks alone", () => {
+    const done = 'A\n```order\n{"id":"o1"}\n```\nB';
+    expect(stripUnclosedFence(done)).toEqual({ content: done, pending: false });
+    expect(stripUnclosedFence("```python\nprint(1)")).toEqual({ content: "```python\nprint(1)", pending: false });
   });
 });

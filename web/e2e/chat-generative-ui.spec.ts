@@ -59,12 +59,13 @@ test.describe("Generative UI — review-sentiment, inventory-fulfillment, pricin
     // doing *more* of its job. The claim is that the chart rendered, not that
     // exactly one did. Observed failing both through the /api proxy and
     // directly against the orchestrator, so it is the spec, not the transport.
-    // Rating-distribution bar chart's x-axis labels (DistributionChart)
-    await expect(page.getByText("5★", { exact: true }).first()).toBeVisible();
+    // Rating-distribution bars and their row labels
+    await expect(page.getByText("Rating distribution", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("5 star", { exact: true }).first()).toBeVisible();
     // Trend chart's section label (TrendChart)
-    await expect(page.getByText("Rating over time").first()).toBeVisible();
-    // Pros/cons lists
-    await expect(page.getByText("Pros", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Average rating by month").first()).toBeVisible();
+    // No Pros/Cons assertion: the card hides lists made of single keywords
+    // ("Great", "Fast"), which is what review keyword extraction returns today.
   });
 
   test("inventory-fulfillment renders a real warehouse table with column headers", async ({ page }) => {
@@ -90,7 +91,8 @@ test.describe("Generative UI — review-sentiment, inventory-fulfillment, pricin
     // same fix. Verified against both the /api proxy and a frontend calling
     // the orchestrator directly, so this is the spec, not the transport.
     await expect(page.getByRole("columnheader", { name: "Warehouse" }).first()).toBeVisible();
-    await expect(page.getByRole("columnheader", { name: "Region" }).first()).toBeVisible();
+    // No "Region" column: the card drops it when every warehouse name already says the region.
+    await expect(page.getByRole("columnheader", { name: "Units" }).first()).toBeVisible();
     // The warehouse-breakdown section label, which the card renders whenever
     // it has warehouse rows — the thing this test actually asks for.
     //
@@ -100,7 +102,7 @@ test.describe("Generative UI — review-sentiment, inventory-fulfillment, pricin
     // two registered tools: `check_stock` returns `in_stock`, while
     // `get_warehouse_availability` — an equally correct pick, and the one that
     // supplies the restock table — does not, on *either* stack. And the card
-    // heading is `product_name || "Stock & Fulfillment"`, so asserting either
+    // heading is `product_name` or a generic "Stock availability", so asserting either
     // string fails whenever the model omits or includes that optional field.
     // Both were observed failing on a different backend each.
     // Exact match: the user's own turn ("…breakdown by warehouse") and the
@@ -133,7 +135,7 @@ test.describe("Generative UI — review-sentiment, inventory-fulfillment, pricin
       "How much would it cost to ship this to the east region, and what are my carrier options?"
     );
 
-    const selectButtons = page.getByRole("button", { name: "Select" });
+    const selectButtons = page.getByRole("button", { name: "Choose" });
     // Longer than the default 10 s on purpose. The turn is complete by the time
     // sendMessageAndWaitForTurn returns, but the shipping card is rendered from
     // the fenced payload in the final message — under full-suite load that last

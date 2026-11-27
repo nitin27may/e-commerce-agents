@@ -42,7 +42,7 @@ function ImagePreviewOverlay({ src, onClose }: { src: string; onClose: () => voi
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="relative max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
         <img src={src} alt="Preview" className="max-h-[85vh] max-w-full rounded-xl object-contain shadow-2xl" />
-        <button onClick={onClose} className="absolute -right-2 -top-2 rounded-full bg-zinc-800 p-1.5 text-white transition-colors hover:bg-zinc-700">
+        <button onClick={onClose} aria-label="Close preview" className="absolute -right-2 -top-2 rounded-full bg-foreground p-1.5 text-background transition-opacity hover:opacity-90">
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -76,10 +76,12 @@ export interface PromptInputBoxProps {
   className?: string;
   disabled?: boolean;
   suggestions?: { label: string; prompt: string }[];
+  /** The specialist picker routes a turn to one agent. Staff Lab only; the storefront never shows it. */
+  showSpecialistPicker?: boolean;
 }
 
 export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxProps>(
-  ({ onSend, isLoading = false, className, disabled = false, suggestions = [] }, ref) => {
+  ({ onSend, isLoading = false, className, disabled = false, suggestions = [], showSpecialistPicker = false }, ref) => {
     const [input, setInput] = React.useState("");
     const [agentMode, setAgentMode] = React.useState<string | null>(null);
     const [attachedFile, setAttachedFile] = React.useState<File | null>(null);
@@ -91,7 +93,9 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const MAX_HEIGHT = 240;
 
-    const currentMode = AGENT_MODES.find((m) => m.id === agentMode) ?? AGENT_MODES[0];
+    // Without the picker nothing can pin a mode, so a turn always routes automatically.
+    const effectiveMode = showSpecialistPicker ? agentMode : null;
+    const currentMode = AGENT_MODES.find((m) => m.id === effectiveMode) ?? AGENT_MODES[0];
     const placeholder = currentMode.placeholder;
 
     // Auto-resize textarea
@@ -126,7 +130,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
 
     const handleSubmit = () => {
       if (!hasContent || isDisabled) return;
-      onSend(input.trim(), agentMode);
+      onSend(input.trim(), effectiveMode);
       setInput("");
       setAttachedFile(null);
       setFilePreview(null);
@@ -185,7 +189,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
             ref={ref}
             className={cn(
               "rounded-2xl border bg-background shadow-sm transition-colors duration-200",
-              isLoading ? "border-teal-400/60" : "border-border hover:border-zinc-300",
+              isLoading ? "border-primary/40" : "border-border hover:border-primary/30",
               className
             )}
             onDragOver={(e) => e.preventDefault()}
@@ -205,7 +209,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
                     <button type="button" className="block h-16 w-16 overflow-hidden rounded-lg" onClick={() => setSelectedImage(filePreview)}>
                       <img src={filePreview} alt={attachedFile.name} className="h-full w-full object-cover" />
                     </button>
-                    <button type="button" onClick={removeFile} className="absolute -right-1.5 -top-1.5 rounded-full bg-zinc-700 p-0.5 text-white transition-colors hover:bg-zinc-600">
+                    <button type="button" onClick={removeFile} aria-label="Remove image" className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background transition-opacity hover:opacity-90">
                       <X className="h-3 w-3" />
                     </button>
                   </div>
@@ -256,115 +260,93 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
               )}
             </AnimatePresence>
 
-            {/* Bottom actions */}
+            {/* Bottom actions: attach (and, in the Lab, the specialist picker) on the left, send on the right */}
             <div className="flex items-center justify-between px-3 pb-3">
-              {/* Attach button */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isDisabled}
-                    aria-label="Attach image"
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-                  >
-                    <Paperclip className="h-4 w-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>Attach image</TooltipContent>
-              </Tooltip>
-
-              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-
-              {/*
-                Specialist picker, collapsed.
-
-                This was a six-chip row pinned above the textarea on every
-                message. `Auto` is the default and the one most people want —
-                it is what lets the orchestrator route for you — so the row spent
-                a full line of composer height advertising five options that are
-                rarely the right answer, on every viewport.
-
-                Collapsed to a single button that names the ACTIVE mode, so the
-                current state is still visible at a glance while costing a
-                button rather than a row. Only shown as "Auto" when nothing is
-                pinned; picking a specialist makes the button read that
-                specialist, which is the state worth surfacing.
-
-                NOT the orchestration-mode switcher. That is a different control
-                (`chat/mode-switcher.tsx`, fed by GET /api/orchestration/modes)
-                on the page toolbar, and issue #4 puts it explicitly out of
-                scope. Collapsing that one would hide the feature this repo is
-                built around.
-              */}
-              <div className="relative" ref={modeMenuRef}>
+              <div className="flex items-center gap-1">
+                {/* Attach button */}
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      onClick={() => setModeMenuOpen((v) => !v)}
+                      onClick={() => fileInputRef.current?.click()}
                       disabled={isDisabled}
-                      aria-haspopup="listbox"
-                      aria-expanded={modeMenuOpen}
-                      aria-label={`Specialist: ${currentMode.label}`}
-                      className={cn(
-                        "flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40",
-                        agentMode === null
-                          ? "text-muted-foreground hover:bg-muted hover:text-foreground"
-                          : "bg-primary text-primary-foreground hover:bg-primary/90"
-                      )}
+                      aria-label="Attach image"
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                     >
-                      {currentMode.label}
-                      <ChevronDown className={cn("h-3 w-3 transition-transform", modeMenuOpen && "rotate-180")} />
+                      <Paperclip className="h-4 w-4" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>
-                    {agentMode === null ? "Route automatically" : `Pinned to ${currentMode.label}`}
-                  </TooltipContent>
+                  <TooltipContent>Attach image</TooltipContent>
                 </Tooltip>
 
-                <AnimatePresence>
-                  {modeMenuOpen && (
-                    <motion.div
-                      role="listbox"
-                      aria-label="Specialist"
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 4 }}
-                      transition={{ duration: 0.12 }}
-                      className="absolute bottom-full left-0 z-50 mb-2 min-w-44 overflow-hidden rounded-lg border bg-popover p-1 shadow-md"
-                    >
-                      {AGENT_MODES.map((mode) => (
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+
+                {showSpecialistPicker && (
+                  <div className="relative" ref={modeMenuRef}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
                         <button
-                          key={String(mode.id)}
                           type="button"
-                          role="option"
-                          aria-selected={agentMode === mode.id}
-                          onClick={() => {
-                            setAgentMode(mode.id);
-                            setModeMenuOpen(false);
-                            textareaRef.current?.focus();
-                          }}
+                          onClick={() => setModeMenuOpen((v) => !v)}
+                          disabled={isDisabled}
+                          aria-haspopup="listbox"
+                          aria-expanded={modeMenuOpen}
+                          aria-label={`Specialist: ${currentMode.label}`}
                           className={cn(
-                            "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
-                            agentMode === mode.id
-                              ? "bg-accent text-accent-foreground"
-                              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                            "flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40",
+                            agentMode === null
+                              ? "text-muted-foreground hover:bg-muted hover:text-foreground"
+                              : "bg-primary text-primary-foreground hover:bg-primary/90"
                           )}
                         >
-                          {mode.label}
-                          {agentMode === mode.id && <Check className="h-3 w-3 shrink-0" />}
+                          {currentMode.label}
+                          <ChevronDown className={cn("h-3 w-3 transition-transform", modeMenuOpen && "rotate-180")} />
                         </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {agentMode === null ? "Route automatically" : `Pinned to ${currentMode.label}`}
+                      </TooltipContent>
+                    </Tooltip>
 
-              {/* Keyboard hint */}
-              <span className="hidden select-none text-xs text-muted-foreground sm:block">
-                Enter to send · Shift+Enter newline
-              </span>
+                    <AnimatePresence>
+                      {modeMenuOpen && (
+                        <motion.div
+                          role="listbox"
+                          aria-label="Specialist"
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 4 }}
+                          transition={{ duration: 0.12 }}
+                          className="absolute bottom-full left-0 z-50 mb-2 min-w-44 overflow-hidden rounded-lg border bg-popover p-1 shadow-md"
+                        >
+                          {AGENT_MODES.map((mode) => (
+                            <button
+                              key={String(mode.id)}
+                              type="button"
+                              role="option"
+                              aria-selected={agentMode === mode.id}
+                              onClick={() => {
+                                setAgentMode(mode.id);
+                                setModeMenuOpen(false);
+                                textareaRef.current?.focus();
+                              }}
+                              className={cn(
+                                "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+                                agentMode === mode.id
+                                  ? "bg-accent text-accent-foreground"
+                                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                              )}
+                            >
+                              {mode.label}
+                              {agentMode === mode.id && <Check className="h-3 w-3 shrink-0" />}
+                            </button>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+              </div>
 
               {/* Send / Stop button */}
               <Tooltip>
@@ -379,16 +361,16 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
                     className={cn(
                       "flex h-8 w-8 items-center justify-center rounded-full transition-all duration-200",
                       isLoading
-                        ? "bg-destructive text-white hover:bg-destructive/90"
+                        ? "bg-foreground text-background hover:opacity-90"
                         : hasContent
-                          ? "bg-teal-600 text-white hover:bg-teal-700"
+                          ? "bg-primary text-primary-foreground hover:bg-primary/90"
                           : "bg-muted text-muted-foreground"
                     )}
                   >
                     <AnimatePresence mode="wait" initial={false}>
                       {isLoading ? (
                         <motion.span key="stop" initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.7 }} transition={{ duration: 0.12 }}>
-                          <Square className="h-3.5 w-3.5 fill-white" />
+                          <Square className="h-3.5 w-3.5 fill-current" />
                         </motion.span>
                       ) : (
                         <motion.span key="send" initial={{ opacity: 0, scale: 0.7, y: 4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.7, y: -4 }} transition={{ duration: 0.12 }}>

@@ -8,18 +8,38 @@ const FALLBACK = [
 ];
 
 const productFence = (n = 1) =>
-  Array.from({ length: n }, () => '```product\n{"id":"x","name":"Thing"}\n```').join("\n\n");
+  Array.from({ length: n }, (_, i) => `\`\`\`product\n{"id":"p${i}","name":"Thing ${i}"}\n\`\`\``).join("\n\n");
 
 describe("cardKindsIn", () => {
-  it("finds every fence, in order, keeping duplicates", () => {
-    const text = `Here you go\n${productFence()}\nand the order:\n\`\`\`order\n{}\n\`\`\``;
+  it("finds every fence, in order", () => {
+    const text = `Here you go\n${productFence()}\nand the order:\n\`\`\`order\n{"id":"o1"}\n\`\`\``;
     expect(cardKindsIn(text)).toEqual(["product", "order"]);
   });
 
-  it("counts repeats rather than collapsing them", () => {
+  it("counts distinct cards of one kind rather than collapsing them", () => {
     // Two products warrant "compare these"; one warrants "check stock". The
-    // count is the signal, so de-duplicating here would lose it.
+    // count is the signal, so de-duplicating distinct cards would lose it.
     expect(cardKindsIn(productFence(2))).toEqual(["product", "product"]);
+  });
+
+  it("counts a card restated twice once, as it renders once", () => {
+    const one = productFence();
+    expect(cardKindsIn(`${one}\n${one}`)).toEqual(["product"]);
+  });
+
+  it("finds a fence whose newline after the tag was dropped in transit", () => {
+    // The renderer tolerates ```order{...}; the chips used to require "\n" and missed it.
+    expect(cardKindsIn('Your order:```order{"id":"o1","status":"shipped"}```')).toEqual(["order"]);
+  });
+
+  it("ignores an empty or invalid payload, which renders no card", () => {
+    expect(cardKindsIn("```order\n{}\n```")).toEqual([]);
+    expect(cardKindsIn("```inventory\n{}\n```")).toEqual([]);
+    expect(cardKindsIn("```return\n{\"refund_amount\": -5}\n```")).toEqual([]);
+  });
+
+  it("reads a two-product array as one comparison", () => {
+    expect(cardKindsIn('```products\n[{"id":"a","name":"A"},{"id":"b","name":"B"}]\n```')).toEqual(["comparison"]);
   });
 
   it("finds nothing in plain prose", () => {
@@ -100,7 +120,7 @@ describe("deriveSuggestions", () => {
   });
 
   it("treats a products array as multiple by construction", () => {
-    const text = '```products\n[{"id":"a"},{"id":"b"}]\n```';
+    const text = '```products\n[{"id":"a","name":"A"},{"id":"b","name":"B"}]\n```';
     expect(deriveSuggestions(text, FALLBACK)[0].label).toBe("Compare these");
   });
 
@@ -115,7 +135,7 @@ describe("deriveSuggestions", () => {
 
   it("uses the last card when a message carries several kinds", () => {
     // The nearest card to the composer is the one still on screen.
-    const text = `${productFence()}\n\`\`\`inventory\n{}\n\`\`\``;
+    const text = `${productFence()}\n\`\`\`inventory\n{"product_id":"p0","in_stock":true}\n\`\`\``;
     expect(deriveSuggestions(text, FALLBACK)[0].label).toBe("Estimate delivery");
   });
 
