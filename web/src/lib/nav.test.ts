@@ -68,6 +68,8 @@ describe("labelForPath", () => {
     expect(labelForPath("/admin/decisions")).toBe("Decisions");
     expect(labelForPath("/runs")).toBe("Runs");
     expect(labelForPath("/seller/proposals")).toBe("Proposals");
+    expect(labelForPath("/checkout")).toBe("Checkout");
+    expect(labelForPath("/seller/products")).toBe("Seller products");
   });
 
   it("matches nested detail routes to their parent item", () => {

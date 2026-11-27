@@ -96,9 +96,16 @@ export function visibleGroups(opts: {
   })).filter((group) => group.items.length > 0);
 }
 
+// Routes reached from a page rather than the sidebar still need a breadcrumb label.
+const OFF_NAV_ITEMS: Pick<NavItem, "label" | "href">[] = [
+  { label: "Checkout", href: "/checkout" },
+  { label: "Seller products", href: "/seller/products" },
+  { label: "Audit", href: "/admin/audit" },
+];
+
 /** A flat label for the current path, used by the top-bar breadcrumb. */
 export function labelForPath(pathname: string): string {
-  const flat = NAV_GROUPS.flatMap((g) => g.items);
+  const flat = [...NAV_GROUPS.flatMap((g) => g.items), ...OFF_NAV_ITEMS];
   // Longest matching href wins (so /admin/usage beats /admin).
   const match = flat
     .filter((i) => pathname === i.href || pathname.startsWith(i.href + "/"))

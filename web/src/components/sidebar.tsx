@@ -105,11 +105,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <Separator />
 
       {/* Navigation */}
-      <ScrollArea className="min-h-0 flex-1 px-3 py-3">
-        <nav className="flex flex-col gap-4">
+      <ScrollArea className="min-h-0 flex-1 px-3 py-2">
+        <nav className="flex flex-col gap-3">
           {groups.map((group) => (
             <div key={group.label} className="flex flex-col gap-0.5">
-              <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="px-3 pb-0.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {group.label}
               </p>
               {group.items.map((item) => (
@@ -127,7 +127,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       {/* User section */}
       <Separator />
-      <div className="p-3">
+      <div className="p-2">
         <Link
           href="/profile"
           onClick={onNavigate}
