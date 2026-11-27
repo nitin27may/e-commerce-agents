@@ -53,7 +53,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Account",
     items: [
       { label: "Profile", href: "/profile", icon: User },
-      { label: "Seller", href: "/seller", icon: BarChart3, sellerOnly: true },
+    ],
+  },
+  {
+    label: "Seller",
+    items: [
+      { label: "Seller dashboard", href: "/seller", icon: BarChart3, sellerOnly: true },
       { label: "Proposals", href: "/seller/proposals", icon: Lightbulb, sellerOnly: true },
     ],
   },

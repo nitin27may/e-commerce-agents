@@ -36,7 +36,7 @@ function NavLink({
       onClick={onClick}
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "group/navlink flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+        "group/navlink flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
         isActive
           ? "bg-primary/10 text-primary"
           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
@@ -105,10 +105,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <Separator />
 
       {/* Navigation */}
-      <ScrollArea className="min-h-0 flex-1 px-3 py-4">
-        <nav className="flex flex-col gap-5">
+      <ScrollArea className="min-h-0 flex-1 px-3 py-3">
+        <nav className="flex flex-col gap-4">
           {groups.map((group) => (
-            <div key={group.label} className="flex flex-col gap-1">
+            <div key={group.label} className="flex flex-col gap-0.5">
               <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {group.label}
               </p>
