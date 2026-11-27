@@ -829,6 +829,7 @@ export function ChatView({ devView = false }: { devView?: boolean }) {
               {messages.map((msg) => (
                 <div
                   key={msg.id}
+                  data-message-role={msg.role}
                   className={`group/message mb-5 flex items-start gap-2.5 ${
                     msg.role === "user" ? "flex-row-reverse" : "flex-row"
                   }`}

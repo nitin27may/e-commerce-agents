@@ -12,6 +12,7 @@ import { StatusBadge, TONE_BADGE_CLASS, TONE_TEXT_CLASS } from "@/components/ui/
 import { PageContainer, PageHeader } from "@/components/ui/page-header";
 import { AccessDenied } from "@/components/ui/access-denied";
 import { EmptyState } from "@/components/empty-state";
+import { ApprovalDetailView } from "@/components/admin/approval-detail";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { CheckCircle, XCircle, Clock, Loader2, RefreshCw, User, Route } from "lucide-react";
@@ -272,11 +273,7 @@ export default function ApprovalsPage() {
                             Could not load the details. It may be routed to a manager.
                           </p>
                         )}
-                        {detail && typeof detail === "object" && (
-                          <pre className="mt-1.5 max-h-48 overflow-auto rounded bg-muted/60 px-2 py-1.5 text-xs leading-relaxed text-foreground/70">
-                            {JSON.stringify(detail.source_detail ?? {}, null, 2)}
-                          </pre>
-                        )}
+                        {detail && typeof detail === "object" && <ApprovalDetailView detail={detail} />}
                       </details>
                     </div>
 

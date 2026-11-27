@@ -47,11 +47,12 @@ curl -sf "$API/health" >/dev/null || { echo "the stack is not up at $API: ./scri
 
 GREP=()
 if [ ${#APP[@]} -gt 0 ]; then
-  pattern="$(printf '^%s:|' "${APP[@]}")"
-  GREP=(-g "${pattern%|}")
+  # Playwright matches -g against the whole title path ("demo-media.spec.ts > hero: ..."), so no ^ anchor.
+  pattern="$(printf '%s|' "${APP[@]}")"
+  GREP=(-g " (${pattern%|}): ")
 fi
 (cd "$ROOT/web" && RECORD_MEDIA=1 RECORD_FRAMES_DIR="$FRAMES" E2E_API_URL="$API" \
-  pnpm exec playwright test e2e/demo-media.spec.ts --project=chromium-python --trace off "${GREP[@]}")
+  pnpm exec playwright test e2e/demo-media.spec.ts --project=chromium-python --trace off ${GREP[@]+"${GREP[@]}"})
 
 # Each take directory becomes one clip. Multi-part takes (name-1, name-2) are joined first.
 for dir in "$FRAMES"/*/; do
@@ -67,14 +68,19 @@ for first in "$FRAMES"/*-1/; do
   joined="$FRAMES/$base"
   mkdir -p "$joined"
   : > "$joined/frames.txt"
+  last=""
   for part in "$FRAMES/$base"-[0-9]/; do
     p="$(basename "$part")"
+    # Each part's list ends with its last frame repeated without a duration (the concat demuxer's way of holding
+    # it). In the middle of a joined list that entry is misread as a long still, so it is dropped here and only
+    # the final part's is added back after the loop.
     while IFS= read -r line; do
       case "$line" in
-        file\ *) f="${line#file \'}"; f="${f%\'}"; cp "$part$f" "$joined/$p-$f"; echo "file '$p-$f'" >> "$joined/frames.txt" ;;
+        file\ *) f="${line#file \'}"; f="${f%\'}"; cp "$part$f" "$joined/$p-$f"; echo "file '$p-$f'" >> "$joined/frames.txt"; last="$p-$f" ;;
         *) echo "$line" >> "$joined/frames.txt" ;;
       esac
-    done < "$part/frames.txt"
+    done < <(sed '$d' "$part/frames.txt")
   done
+  echo "file '$last'" >> "$joined/frames.txt"
   "$ROOT/scripts/demo/encode.sh" "$joined" "$base" --gif-fps 13 --mp4-width 2560
 done

@@ -4,7 +4,7 @@ Every GIF and video in the docs is produced by a script, so a UI change is follo
 
 ```bash
 ./scripts/dev.sh --no-key            # the stack, with recorded model answers: no key, no cost
-scripts/record-media.sh              # every app clip  -> docs/images/<name>.gif + docs/media/<name>.mp4
+scripts/record-media.sh              # every app clip  -> docs/images/<name>.gif + docs/media/<name>.mp4 (not committed)
 scripts/record-media.sh hero         # one clip, by the scenario name in web/e2e/demo-media.spec.ts
 scripts/record-media.sh evals        # a terminal clip, from scripts/demo/tapes/evals.tape
 ```
@@ -26,7 +26,7 @@ Needs `ffmpeg` and `gifski`, plus `vhs` for terminal clips (`brew install ffmpeg
 | Viewport | 1280 x 800, light theme | One frame for every clip, so the set reads as one product. 16:10 matches a laptop screen |
 | Capture | PNG frames at device scale 2 (2560 x 1600), each stamped with its capture time | Playwright's `recordVideo` encodes low-bitrate VP8 at scale 1, so small text is soft before any encoder sees it. The DevTools screencast ignores the device scale, so frames come from `Page.captureScreenshot`, about 13 a second |
 | GIF | 1280 px wide, 13 fps, gifski `--quality 95 --motion-quality 100 --lossy-quality 100` | GitHub renders GIFs inline in a README and does not play video files committed to the repo. A downscale from 2x keeps text crisp. Lower motion or lossy quality leaves ghosting in flat backgrounds. Budget: 8 MB per clip |
-| MP4 | 2560 px wide, H.264 high profile, CRF 18, 30 fps, `+faststart` | For the docs site, articles and release notes. Upload it to a GitHub issue or PR to get a `user-attachments` URL, which a README can play inline |
+| MP4 | 2560 px wide, H.264 high profile, CRF 18, 30 fps, `+faststart` | For articles, the docs site and release notes. Not committed (`docs/media/` is ignored): every re-record would add megabytes to the history. Attach it to a release, or upload it to a GitHub issue or PR for a `user-attachments` URL that a README can play inline |
 | Pointer | Drawn arrow with a click ripple; moves glide | Headless Chromium draws no cursor, and without one a viewer cannot tell what was clicked |
 | Pacing | Typing at about 45 characters a second; SSE frames spaced 450 to 700 ms; a pause after each answer long enough to read it once | Workflow modes finish in 100 to 300 ms on the replay stack, which would flash past |
 | Terminal | vhs, 1280 x 800, Menlo 15, GitHub Dark | Readable at README width |

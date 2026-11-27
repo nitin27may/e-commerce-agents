@@ -121,3 +121,6 @@ aspire.config.json
 # Local outputs left by replay-evals.sh and stack-parity.sh
 agents/python/eval-records-*.jsonl
 stack-parity-out/
+
+# Demo videos (scripts/record-media.sh): published as GitHub assets, not committed; GIFs live in docs/images.
+docs/media/
