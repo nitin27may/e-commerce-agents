@@ -18,8 +18,8 @@
 #                Honoured only while the frontend is IP-restricted, which is the default
 #   verify       on: runs scripts/azure/sanity.sh at the end; --no-verify skips it
 #   frontend     reachable only from this machine's public IP
-# It costs real money while it is up: scripts/azure-down.sh removes everything. Not verified against a real
-# subscription yet; see docs/azure-deployment.md.
+# It costs real money while it is up: scripts/azure-down.sh removes everything. The small profile has been deployed
+# and tested from a clean subscription; see docs/azure-deployment.md.
 #
 # --profile small (the default) is the cheapest profile, a 10 USD budget (docs/azure-deployment-stages.md): scale to zero, one replica at most, no
 # registry, a 0.1 GB/day log cap. --llm replay|openai skips the Azure OpenAI account (a new subscription often has no quota for it):

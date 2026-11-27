@@ -145,11 +145,11 @@ the Aspire container. See [telemetry.md](./telemetry.md).
 
 ## Azure deployment: first-run failure catalogue
 
-Fifty-one ways a first `scripts/azure-up.sh` goes wrong, and what already guards against each. None of this has run against a real subscription yet ([azure-deployment.md](azure-deployment.md) lists the assumptions), so the guards are the intent, not a track record. When one fires, the message names the fix.
+Fifty-one ways a first `scripts/azure-up.sh` goes wrong, and what already guards against each. Most were written before the first real deployment; the ones that real runs actually hit are listed in [findings from the real runs](azure-deployment-stages.md#findings-from-the-real-runs). When one fires, the message names the fix.
 
 | # | Failure | Symptom | Guard |
 |---|---|---|---|
-| 1 | gpt-4.1 deployment refused | model deployment fails: deprecated, closed to new customers | default is gpt-5.1 (2025-11-13); `check_model` rejects a Deprecated or Deprecating lifecycle before provisioning |
+| 1 | gpt-4.1 deployment refused | model deployment fails: deprecated, closed to new customers | the profile names the default (`small`: gpt-4.1-mini 2025-04-14; gpt-5.1 if a profile names none); `check_model` rejects a Deprecated or Deprecating lifecycle before provisioning |
 | 2 | gpt-5.x answers 400 on `temperature` | every chat turn fails | `LLM_TEMPERATURE` is empty for `gpt-5*` model names (Bicep derives it); the app omits the field when empty |
 | 3 | No TPM quota | deployment fails with `InsufficientQuota` | `check_model` reads `az cognitiveservices usage list`; use `AZURE_OPENAI_LOCATION` or lower `chatCapacity` in the profile |
 | 4 | Parallel model deployments conflict | `RequestConflict` on the second deployment | `dependsOn` chain chat, embedding, mini (asserted in `test_infra_bicep.py`) |
@@ -187,7 +187,7 @@ Fifty-one ways a first `scripts/azure-up.sh` goes wrong, and what already guards
 | 36 | Smoke fails seconds after provisioning | `revisions not Healthy` or a non-200 frontend while apps still start | `smoke.sh` polls revisions and the frontend for `SMOKE_WAIT_SECONDS` (300) before failing |
 | 37 | `az containerapp job start` right after provisioning returns nothing | `postprovision` stops with no execution name | retried four times, 20 s apart, then the message prints the manual command |
 | 38 | `azd down` fails or the environment is not on this machine | `no azd environment` or a purge error from a protected vault | `azure-down` explains how to delete `rg-<env>` by hand and re-run with `--purge-only`; a failing `azd down` no longer stops the leftover check |
-| 39 | New subscription: `eastus` refuses Postgres | `list-skus` answers "Provisioning is restricted in this region" (seen on a new subscription) | `check_postgres_sku` fails with the alternatives; use `eastus2` ([sequence](azure-deployment-stages.md#findings-from-the-read-only-rehearsal)) |
+| 39 | New subscription: `eastus` refuses Postgres | `list-skus` answers "Provisioning is restricted in this region" (seen on a new subscription) | `check_postgres_sku` fails with the alternatives; use `eastus2` ([sequence](azure-deployment-stages.md#findings-from-the-real-runs)) |
 | 40 | New subscription: the first request after idle fails or is slow | a 502 or a timeout on the first chat or API call; the second works | `small` scales every HTTP app to zero, so row 21's guard is deliberately off. Log in and list products first to wake the chain, or raise `minReplicas` in `profiles/small.json` |
 | 41 | New subscription: no Azure OpenAI quota for the chat model (`gpt-4.1-mini`) | `InsufficientQuota`, or an empty `az cognitiveservices usage list` (the profile deploys the Foundry account and model by default; Azure spells the usage row `gpt4.1-mini`, which the preflight also accepts) | another model with `--chat-model` and `--chat-model-version`, or `--llm replay` (no model, 0 USD) or `--llm openai` with your own endpoint; both set `deployOpenAi=false` and skip the account |
 | 42 | Replay stack: every chat prompt says it was not recorded | the chat shows the "not recorded" notice | expected under `--llm replay`: the released images carry no recordings. Browsing, search, cart and the quick smoke work; use `--llm openai` for chat |

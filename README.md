@@ -38,7 +38,7 @@ agent and builds up to it one mechanism at a time; chapter 1 runs with no API ke
 | **Identity** | JWT sign-in, five roles (customer, power user, seller, support, admin), identity carried to every agent and tool |
 | **Safety** | Policy-routed human approval, checkpoints and resume, guardrails, grounding checks, idempotency on money-moving actions |
 | **Quality** | An eval suite that replays without a key in CI, a red-team set, dozens of CI checks per pull request |
-| **Operations** | OpenTelemetry into the Aspire dashboard, per-request token and cost tracking, Docker Compose with prebuilt images, a draft Azure Container Apps deployment |
+| **Operations** | OpenTelemetry into the Aspire dashboard, per-request token and cost tracking, Docker Compose with prebuilt images, a one-command Azure Container Apps deployment, tested from a clean subscription |
 | **Two backends** | All of the above in Python, and in .NET / C# behind the same frontend and database, with the differences listed in the [parity matrix](docs/parity-matrix.md) |
 
 ## One orchestrator, five orchestration modes
@@ -134,6 +134,31 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 (the original Python-only walkthrough). The articles are optional background — this repo and its
 [documentation site](https://nitinksingh.com/e-commerce-agents/) are the canonical, always-current source.
 
+## Deploy to Azure in one command
+
+```bash
+az login && azd auth login
+scripts/azure-up.sh                  # about 10 minutes, then prints the URL, the demo accounts and what to try
+scripts/azure-down.sh --env <env>    # removes everything and proves it
+```
+
+No model key, no Docker, no secrets to create. The script checks your subscription (providers, region, model quota),
+generates the secrets into Key Vault, provisions Azure Container Apps, PostgreSQL with pgvector, a Microsoft Foundry
+chat and embedding model reached through managed identity, Log Analytics and a 10 USD budget, then runs a smoke test
+with a real model and a return through approval. It was deployed and tested from a clean subscription.
+
+| | |
+|---|---|
+| Time | about 8 minutes to provision, about 10 to a working URL |
+| Cost | about 1.4 USD a day on the default `small` profile (scale to zero); `--llm replay` needs no model quota |
+| Access | the frontend is reachable only from your public IP unless you pass `--public-open` |
+| Safe to repeat | yes; a failed step names its fix and the same command picks up where it stopped |
+
+What it creates, every option and the cost breakdown: [docs/azure-deployment.md](docs/azure-deployment.md).
+There is also a portal button, which needs a few more steps ([details](docs/azure-deployment-reference.md#deploy-to-azure-button)):
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fnitin27may%2Fe-commerce-agents%2Fmain%2Finfra%2Fazuredeploy.json)
+
 ---
 
 ## Where to start
@@ -142,6 +167,7 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 |---|---|
 | **Learn MAF step by step** — start with no key | [tutorials/README.md](./tutorials/README.md) — 38 chapters; [run chapter 1](#learn) now |
 | **Just run it** | [Run it](#run-it) above — Docker, one command |
+| **Deploy it to my Azure subscription** | [Deploy to Azure in one command](#deploy-to-azure-in-one-command) — about 10 minutes, about 1.4 USD a day |
 | **Choose an orchestration pattern** | [The five modes](#one-orchestrator-five-orchestration-modes) · [benchmark](docs/orchestration-benchmark.md) · [orchestration patterns](docs/concepts/06-orchestration-patterns.md) |
 | Run the .NET backend, or Windows, or with no API key | [Quick Start](https://nitinksingh.com/e-commerce-agents/getting-started/quick-start.html) |
 | Configure it | [Configuration](docs/configuration.md) — one `.env`, and how it reaches each service |
@@ -252,17 +278,6 @@ switch with `./scripts/dev.sh --dotnet`. Parity is checked in CI by a keyless ga
 
 ---
 
-## Deploy to Azure
-
-```bash
-az login && azd auth login
-scripts/azure-up.sh        # shows progress, then prints the URL and the demo accounts
-```
-
-That is the whole job: no model key, no Docker, no secrets to create. When you are finished, `scripts/azure-down.sh --env <env>` removes everything. It costs about 1.4 USD a day while it is up. What it creates, the options and the cost are in [docs/azure-deployment.md](docs/azure-deployment.md). There is also a portal button, which needs a few more steps ([details](docs/azure-deployment-reference.md#deploy-to-azure-button)):
-
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fnitin27may%2Fe-commerce-agents%2Fmain%2Finfra%2Fazuredeploy.json)
-
 ---
 
 ## Documentation
@@ -315,7 +330,7 @@ checkboxes and the reasoning for the order, is on the
 
 | Next | What it is |
 |---|---|
-| **Azure and Microsoft Foundry** | The one-command Container Apps deployment ran from a clean subscription ([Deploy to Azure](#deploy-to-azure)). Next: Foundry features that need an Azure credential (hosted agents, evaluators logging to a project) and the measured cost of the larger topologies. The .NET 11 move is a separate, later change |
+| **Azure and Microsoft Foundry** | The one-command Container Apps deployment ran from a clean subscription ([Deploy to Azure](#deploy-to-azure-in-one-command)). Next: Foundry features that need an Azure credential (hosted agents, evaluators logging to a project) and the measured cost of the larger topologies. The .NET 11 move is a separate, later change |
 | **Finish the gates** | The keyless parity gate runs in CI, but it covers only turns that call no model. A model-calling comparison across the two stacks needs a key, and the .NET eval suite still needs its baselines |
 | **Retrieval and tooling** | A typed filter DSL for `search_products`, the two MCP servers published to PyPI, and prompt caching — now measurable, because the cost counter ships |
 
