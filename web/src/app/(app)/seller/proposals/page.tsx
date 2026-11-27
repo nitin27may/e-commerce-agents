@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Lightbulb, Loader2, Sparkles } from "lucide-react";
+import { Lightbulb, Loader2 } from "lucide-react";
 import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api, type ProposalLineDecision, type SellerProposal } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
+import { AccessDenied } from "@/components/ui/access-denied";
 import { ProposalCard } from "@/components/seller/proposal-card";
 
 export default function SellerProposalsPage() {
@@ -64,11 +66,7 @@ export default function SellerProposalsPage() {
 
   if (authLoading) return null;
   if (!user || !isSeller) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <EmptyState icon={Lightbulb} title="Access Denied" description="Proposals are for sellers." />
-      </div>
-    );
+    return <AccessDenied description="Proposals are for sellers." />;
   }
 
   const open = proposals.filter((p) => p.status === "pending_review");
@@ -76,19 +74,18 @@ export default function SellerProposalsPage() {
   const past = proposals.filter((p) => p.status !== "pending_review" && p.status !== "awaiting_manager");
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Proposals</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Price markdowns and restock orders suggested for your products. Nothing changes until you accept it.
-          </p>
-        </div>
-        <Button onClick={generate} disabled={generating}>
-          {generating ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}
-          Generate suggestions
-        </Button>
-      </div>
+    <PageContainer className="space-y-6">
+      <PageHeader
+        icon={Lightbulb}
+        title="Proposals"
+        description="Price markdowns and restock orders suggested for your products. Nothing changes until you accept it."
+        actions={
+          <Button onClick={generate} disabled={generating}>
+            {generating && <Loader2 className="animate-spin" data-icon="inline-start" />}
+            Generate suggestions
+          </Button>
+        }
+      />
 
       {notice && (
         <p role="status" className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
@@ -131,6 +128,6 @@ export default function SellerProposalsPage() {
           )}
         </>
       )}
-    </div>
+    </PageContainer>
   );
 }

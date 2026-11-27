@@ -316,7 +316,7 @@ describe("AutonomyDecisionsPage - monthly budget use (#299)", () => {
     render(<AutonomyDecisionsPage />);
 
     const month = await screen.findByTestId("budget-month");
-    expect(month.textContent).toContain("2026-11");
+    expect(month.textContent).toContain("November 2026");
     expect(month.textContent).toContain("12 of 300 actions");
     expect(month.textContent).toContain("$60.00 of $3,000.00");
   });

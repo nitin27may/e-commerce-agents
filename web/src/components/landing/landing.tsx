@@ -95,13 +95,13 @@ export function Landing() {
           protocol and are built on the Microsoft Agent Framework.
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <Button render={<Link href="/shop" />} size="lg">
-            Try the demo <ArrowRight className="size-4" />
+          <Button render={<Link href="/shop" />} size="xl">
+            Try the demo <ArrowRight data-icon="inline-end" aria-hidden />
           </Button>
           <Button
             render={<Link href={SERIES_URL} />}
             variant="outline"
-            size="lg"
+            size="xl"
           >
             Read the series
           </Button>
@@ -122,9 +122,9 @@ export function Landing() {
       <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <div className="grid items-stretch gap-3 sm:grid-cols-4">
           {[
-            { label: "Next.js Frontend", sub: "Chat + storefront", icon: Store },
+            { label: "Next.js frontend", sub: "Chat + storefront", icon: Store },
             { label: "Orchestrator", sub: "Routes via A2A", icon: Workflow },
-            { label: "6 Specialist Agents", sub: "Domain tools", icon: Cpu },
+            { label: "6 specialist agents", sub: "Domain tools", icon: Cpu },
             { label: "PostgreSQL + Redis", sub: "pgvector + cache", icon: Database },
           ].map((n, i) => (
             <div key={n.label} className="relative">
@@ -178,11 +178,11 @@ export function Landing() {
             See the agents collaborate
           </h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-            Sign in with a seeded demo account and ask the concierge to find a
-            product, track an order, or apply a coupon.
+            Sign in with one of the demo accounts on the sign-in page and ask
+            the assistant to find a product, track an order, or apply a coupon.
           </p>
-          <Button render={<Link href="/shop" />} size="lg" className="mt-5">
-            Launch the demo <ArrowRight className="size-4" />
+          <Button render={<Link href="/shop" />} size="xl" className="mt-5">
+            Launch the demo <ArrowRight data-icon="inline-end" aria-hidden />
           </Button>
         </div>
       </section>

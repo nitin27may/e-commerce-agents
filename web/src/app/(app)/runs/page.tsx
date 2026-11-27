@@ -7,8 +7,11 @@ import { useAuth } from "@/lib/auth-context";
 import { asArray, asNumber } from "@/lib/guards";
 import { ErrorState } from "@/components/error-state";
 import { StaffOnly } from "@/components/staff-only";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { StatusBadge, TONE_TEXT_CLASS } from "@/components/ui/status-badge";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/empty-state";
+import { formatDateTime, formatDuration, formatNumber } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import {
   Activity,
@@ -85,25 +88,18 @@ function RunsList() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Agent Runs</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Recent orchestrator → specialist → tool execution traces
-          </p>
-        </div>
-        {total > 0 && (
-          <Badge variant="outline" className="text-xs">
-            {total} total
-          </Badge>
-        )}
-      </div>
+    <PageContainer className="space-y-4">
+      <PageHeader
+        icon={Activity}
+        title="Runs"
+        description="Recent agent runs with their tool steps and approvals"
+        actions={total > 0 ? <StatusBadge label={`${total} total`} tone="neutral" /> : undefined}
+      />
 
       {loading && (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-16 animate-pulse rounded-lg bg-muted/60" />
+            <div key={i} className="h-[72px] animate-pulse rounded-xl bg-muted/60" />
           ))}
         </div>
       )}
@@ -116,15 +112,11 @@ function RunsList() {
       )}
 
       {!loading && !error && entries.length === 0 && (
-        <Card>
-          <CardContent className="py-16 text-center">
-            <Activity className="mx-auto mb-3 size-8 text-muted-foreground/40" />
-            <p className="font-medium text-foreground">No runs yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Send a message in Chat to see agent execution traces here.
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Activity}
+          title="No runs yet"
+          description="Send a message in Chat to see agent execution traces here."
+        />
       )}
 
       {!loading && !error && entries.length > 0 && (
@@ -163,7 +155,7 @@ function RunsList() {
           </Button>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -241,7 +233,7 @@ function RunRow({
   }, [wantsTimeline, entry.id, hitl?.status, hitl?.kind]);
 
   return (
-    <Card className={cn("overflow-hidden", pendingApproval && "ring-1 ring-warning/60")}>
+    <Card className={cn("gap-0 py-0", pendingApproval && "ring-warning/60")}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -250,9 +242,9 @@ function RunRow({
         <div className="mt-0.5 shrink-0">
           {/* A paused run is not finished: a green check beside "Needs approval" read as done. */}
           {pendingApproval ? (
-            <PauseCircle className="size-4 text-warning" aria-label="Paused" />
+            <PauseCircle className={cn("size-4", TONE_TEXT_CLASS.warning)} aria-label="Paused" />
           ) : entry.status === "success" ? (
-            <Check className="size-4 text-success" />
+            <Check className={cn("size-4", TONE_TEXT_CLASS.success)} />
           ) : (
             <X className="size-4 text-destructive" />
           )}
@@ -265,20 +257,20 @@ function RunRow({
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <Clock className="size-3" />
-              {new Date(entry.created_at).toLocaleString()}
+              {formatDateTime(entry.created_at)}
             </span>
             {entry.duration_ms > 0 && (
               <span className="flex items-center gap-1">
                 <Zap className="size-3" />
-                {entry.duration_ms}ms
+                {formatDuration(entry.duration_ms)}
               </span>
             )}
             {entry.tokens_in + entry.tokens_out > 0 && (
-              <span>{entry.tokens_in + entry.tokens_out} tokens</span>
+              <span>{formatNumber(entry.tokens_in + entry.tokens_out)} tokens</span>
             )}
             {agentsInvolved.length > 0 && (
               <span className="text-muted-foreground">
-                {agentsInvolved.join(" → ")}
+                {agentsInvolved.join(", ")}
               </span>
             )}
             {entry.trace_id && (
@@ -297,12 +289,10 @@ function RunRow({
 
         <div className="flex shrink-0 items-center gap-2">
           {pendingApproval && (
-            <Badge className="bg-warning text-warning-foreground text-xs">Needs approval</Badge>
+            <StatusBadge label="Needs approval" tone="warning" />
           )}
           {hasSteps && (
-            <Badge variant="outline" className="text-xs">
-              {entry.steps.length} step{entry.steps.length !== 1 ? "s" : ""}
-            </Badge>
+            <StatusBadge label={`${entry.steps.length} step${entry.steps.length !== 1 ? "s" : ""}`} tone="neutral" />
           )}
           <ChevronDown
             className={cn(
@@ -353,7 +343,7 @@ function RunRow({
                       disabled={resuming !== null}
                       onClick={() => handleResume(true)}
                     >
-                      {resuming === "approve" && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                      {resuming === "approve" && <Loader2 className="animate-spin" data-icon="inline-start" />}
                       Approve
                     </Button>
                     <Button
@@ -362,7 +352,7 @@ function RunRow({
                       disabled={resuming !== null}
                       onClick={() => handleResume(false)}
                     >
-                      {resuming === "reject" && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                      {resuming === "reject" && <Loader2 className="animate-spin" data-icon="inline-start" />}
                       Reject
                     </Button>
                   </div>
@@ -370,7 +360,7 @@ function RunRow({
                 </>
               ) : (
                 <p className="text-muted-foreground">
-                  Resolved {hitl.responded_at ? new Date(hitl.responded_at).toLocaleString() : ""}
+                  Resolved {hitl.responded_at ? formatDateTime(hitl.responded_at) : ""}
                 </p>
               )}
               {isLifecycleWait && timeline && timeline.length > 0 && (
@@ -380,7 +370,7 @@ function RunRow({
                       <span className="text-foreground">{e.title}</span>
                       {e.detail ? ` — ${e.detail}` : ""}
                       {e.actor ? ` (${e.actor})` : ""}
-                      <span className="ml-2 text-xs">{new Date(e.at).toLocaleString()}</span>
+                      <span className="ml-2 text-xs">{formatDateTime(e.at)}</span>
                     </li>
                   ))}
                 </ol>
@@ -436,9 +426,9 @@ function StepDetailRow({ step }: { step: RunEntry["steps"][number] }) {
         {step.status === "error" ? (
           <X className="size-3 shrink-0 text-destructive" />
         ) : (
-          <Check className="size-3 shrink-0 text-success" />
+          <Check className={cn("size-3 shrink-0", TONE_TEXT_CLASS.success)} />
         )}
-        <span className="ml-auto shrink-0 text-muted-foreground">{step.duration_ms}ms</span>
+        <span className="ml-auto shrink-0 text-muted-foreground">{formatDuration(step.duration_ms)}</span>
       </button>
 
       {expanded && hasDetail && (

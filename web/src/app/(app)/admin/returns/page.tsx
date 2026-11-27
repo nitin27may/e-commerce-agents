@@ -7,6 +7,9 @@ import { useAuth } from "@/lib/auth-context";
 import { api, type ReturnInspection } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
+import { AccessDenied } from "@/components/ui/access-denied";
+import { formatDate, formatPrice } from "@/lib/format";
 
 type Resolution = "refund" | "store_credit" | "replacement";
 
@@ -16,9 +19,7 @@ const RESOLUTIONS: { value: Resolution; label: string }[] = [
   { value: "replacement", label: "Replacement (as store credit toward it)" },
 ];
 
-function money(n: number): string {
-  return `$${n.toFixed(2)}`;
-}
+const money = formatPrice;
 
 function daysSince(iso: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
@@ -69,7 +70,7 @@ function InspectionCard({ item, onDone }: { item: ReturnInspection; onDone: (mes
   }
 
   return (
-    <li className="space-y-3 rounded-lg border p-4 text-sm" data-testid="inspection-card">
+    <li className="space-y-3 rounded-xl bg-card p-4 text-sm ring-1 ring-foreground/10" data-testid="inspection-card">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="font-medium">
           {item.customer_name} <span className="font-normal text-muted-foreground">({item.customer_email})</span>
@@ -80,14 +81,14 @@ function InspectionCard({ item, onDone }: { item: ReturnInspection; onDone: (mes
       </div>
       <p className="text-muted-foreground">
         Return {item.return_id.slice(0, 8)} · {money(item.refund_amount)} · &ldquo;{item.reason}&rdquo;
-        {item.scanned_at ? ` · scanned ${new Date(item.scanned_at).toLocaleDateString()}` : ""}
+        {item.scanned_at ? ` · scanned ${formatDate(item.scanned_at)}` : ""}
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1">
           <span className="text-xs font-medium">If you accept</span>
           <select
-            className="w-full rounded-md border bg-background px-2 py-1.5"
+            className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
             value={resolution}
             onChange={(e) => setResolution(e.target.value as Resolution)}
             aria-label="Resolution"
@@ -102,7 +103,7 @@ function InspectionCard({ item, onDone }: { item: ReturnInspection; onDone: (mes
         <label className="space-y-1">
           <span className="text-xs font-medium">Amount (empty pays {money(item.refund_amount)}; it can only go down)</span>
           <input
-            className="w-full rounded-md border bg-background px-2 py-1.5"
+            className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
             inputMode="decimal"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
@@ -113,7 +114,7 @@ function InspectionCard({ item, onDone }: { item: ReturnInspection; onDone: (mes
         <label className="space-y-1">
           <span className="text-xs font-medium">Condition</span>
           <input
-            className="w-full rounded-md border bg-background px-2 py-1.5"
+            className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
             value={condition}
             maxLength={200}
             onChange={(e) => setCondition(e.target.value)}
@@ -124,7 +125,7 @@ function InspectionCard({ item, onDone }: { item: ReturnInspection; onDone: (mes
         <label className="space-y-1">
           <span className="text-xs font-medium">Note</span>
           <input
-            className="w-full rounded-md border bg-background px-2 py-1.5"
+            className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
             value={note}
             maxLength={1000}
             onChange={(e) => setNote(e.target.value)}
@@ -135,11 +136,11 @@ function InspectionCard({ item, onDone }: { item: ReturnInspection; onDone: (mes
 
       <div className="flex gap-2">
         <Button size="sm" disabled={busy !== null} onClick={() => decide("accept")}>
-          {busy === "accept" && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+          {busy === "accept" && <Loader2 className="animate-spin" data-icon="inline-start" />}
           Accept
         </Button>
         <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => decide("reject")}>
-          {busy === "reject" && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+          {busy === "reject" && <Loader2 className="animate-spin" data-icon="inline-start" />}
           Reject
         </Button>
       </div>
@@ -184,25 +185,25 @@ export default function ReturnInspectionsPage() {
 
   if (authLoading) return null;
   if (!user || !isStaff) {
-    return <EmptyState icon={PackageCheck} title="Staff only" description="Only support and admins inspect returns." />;
+    return <AccessDenied description="Only support and admins inspect returns." />;
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-4 sm:p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Returns to inspect</h1>
-          <p className="text-sm text-muted-foreground">
-            The carrier has these. Accept one to pay it out (refund, store credit or a replacement), or reject it.
-          </p>
-        </div>
-        <Button size="sm" variant="outline" onClick={refresh} disabled={refreshing} aria-label="Refresh">
-          <RefreshCw className={refreshing ? "size-4 animate-spin" : "size-4"} />
-        </Button>
-      </div>
+    <PageContainer className="space-y-4">
+      <PageHeader
+        icon={PackageCheck}
+        title="Returns"
+        description="Returns the carrier has picked up. Accept one to pay it out (refund, store credit or a replacement), or reject it."
+        actions={
+          <Button size="sm" variant="outline" onClick={refresh} disabled={refreshing}>
+            <RefreshCw className={refreshing ? "animate-spin" : undefined} data-icon="inline-start" />
+            Refresh
+          </Button>
+        }
+      />
 
       {notice && (
-        <p role="status" className="rounded-md border bg-muted px-3 py-2 text-sm">
+        <p role="status" className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
           {notice}
         </p>
       )}
@@ -214,7 +215,7 @@ export default function ReturnInspectionsPage() {
 
       {items === null && !error && <p className="text-sm text-muted-foreground">Loading returns…</p>}
       {items !== null && items.length === 0 && (
-        <EmptyState icon={PackageCheck} title="Nothing to inspect" description="No return is waiting for inspection." />
+        <EmptyState icon={PackageCheck} title="Nothing to inspect" description="No return is waiting for inspection. Returns appear here once the carrier scans the package." />
       )}
       {items !== null && items.length > 0 && (
         <ul className="space-y-3">
@@ -230,6 +231,6 @@ export default function ReturnInspectionsPage() {
           ))}
         </ul>
       )}
-    </div>
+    </PageContainer>
   );
 }

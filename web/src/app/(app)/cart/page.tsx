@@ -15,6 +15,10 @@ import {
 import { formatPrice } from "@/lib/format";
 import { productImageUrl } from "@/lib/images";
 import { Button } from "@/components/ui/button";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
+import { CHIP_CLASS, TONE_BADGE_CLASS, TONE_TEXT_CLASS } from "@/components/ui/status-badge";
+import { EmptyState } from "@/components/empty-state";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -157,66 +161,37 @@ export default function CartPage() {
 
   // -- Empty state --
 
+  const header = (
+    <PageHeader
+      icon={ShoppingCart}
+      title="Cart"
+      description={
+        isLoading
+          ? "Loading your cart..."
+          : `${itemCount} item${itemCount !== 1 ? "s" : ""}`
+      }
+    />
+  );
+
   if (!isLoading && (!cart || cart.items.length === 0)) {
     return (
-      <div className="min-h-screen bg-background">
-        <div className="border-b border-border bg-card">
-          <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-primary">
-                <ShoppingCart className="size-5 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">
-                  Shopping Cart
-                </h1>
-                <p className="text-sm text-muted-foreground">0 items</p>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="mx-auto max-w-7xl px-4 py-20 text-center sm:px-6 lg:px-8">
-          <ShoppingBag className="mx-auto size-12 text-muted-foreground" />
-          <h2 className="mt-4 text-lg font-semibold text-muted-foreground">
-            Your cart is empty
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Looks like you haven&apos;t added any products yet.
-          </p>
-          <Button
-            className="mt-6 bg-primary hover:opacity-90"
-            onClick={() => router.push("/products")}
-          >
-            Browse Products
-          </Button>
-        </div>
-      </div>
+      <PageContainer>
+        {header}
+        <EmptyState
+          icon={ShoppingBag}
+          title="Your cart is empty"
+          description="Products you add to your cart show up here."
+        >
+          <Button onClick={() => router.push("/products")}>Browse products</Button>
+        </EmptyState>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-primary">
-              <ShoppingCart className="size-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">
-                Shopping Cart
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                {isLoading ? "Loading..." : `${itemCount} item${itemCount !== 1 ? "s" : ""}`}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <PageContainer>
+      {header}
+      <div>
         {isLoading ? (
           <div className="grid gap-8 lg:grid-cols-3">
             <div className="space-y-0 divide-y divide-border lg:col-span-2">
@@ -232,7 +207,7 @@ export default function CartPage() {
           <div className="grid gap-8 lg:grid-cols-3">
             {/* Items column */}
             <div className="lg:col-span-2">
-              <Card>
+              <Card className="py-0">
                 <CardContent className="divide-y divide-border p-0">
                   {cart!.items.map((item) => {
                     const isUpdating = updatingItems.has(item.id);
@@ -258,8 +233,9 @@ export default function CartPage() {
                           href={`/products/${item.product_id}`}
                           className="shrink-0"
                         >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={productImageUrl(item.product_id, 80, 80, item.image_url, item.category)}
+                            src={productImageUrl(item.product_id, 160, 160, item.image_url, item.category, item.name)}
                             alt={item.name}
                             className="size-20 rounded-lg object-cover bg-muted"
                             loading="lazy"
@@ -282,7 +258,7 @@ export default function CartPage() {
                             </div>
                             <Badge
                               variant="outline"
-                              className="shrink-0 text-xs font-normal"
+                              className={cn("shrink-0 font-normal", CHIP_CLASS.slate)}
                             >
                               {item.category}
                             </Badge>
@@ -302,13 +278,13 @@ export default function CartPage() {
 
                           {/* Stock warnings */}
                           {outOfStock && (
-                            <div className="flex items-center gap-1 text-xs text-red-600">
+                            <div className="flex items-center gap-1 text-xs text-destructive">
                               <AlertTriangle className="size-3" />
                               Out of stock
                             </div>
                           )}
                           {lowStock && (
-                            <div className="flex items-center gap-1 text-xs text-amber-600">
+                            <div className={cn("flex items-center gap-1 text-xs", TONE_TEXT_CLASS.warning)}>
                               <AlertTriangle className="size-3" />
                               Only {item.available_qty} left
                             </div>
@@ -321,6 +297,7 @@ export default function CartPage() {
                                 variant="outline"
                                 size="icon"
                                 className="size-7"
+                                aria-label={`Decrease quantity of ${item.name}`}
                                 disabled={isUpdating || item.quantity <= 1}
                                 onClick={() =>
                                   handleUpdateQty(item.id, item.quantity - 1)
@@ -328,13 +305,14 @@ export default function CartPage() {
                               >
                                 <Minus className="size-3" />
                               </Button>
-                              <span className="w-8 text-center text-sm font-medium text-muted-foreground">
+                              <span className="w-8 text-center text-sm font-medium tabular-nums text-foreground">
                                 {item.quantity}
                               </span>
                               <Button
                                 variant="outline"
                                 size="icon"
                                 className="size-7"
+                                aria-label={`Increase quantity of ${item.name}`}
                                 disabled={isUpdating}
                                 onClick={() =>
                                   handleUpdateQty(item.id, item.quantity + 1)
@@ -346,7 +324,8 @@ export default function CartPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="ml-2 size-7 text-muted-foreground hover:text-red-600"
+                                className="ml-2 size-7 text-muted-foreground hover:text-destructive"
+                                aria-label={`Remove ${item.name}`}
                                 disabled={isUpdating}
                                 onClick={() => handleRemoveItem(item.id)}
                               >
@@ -354,7 +333,7 @@ export default function CartPage() {
                               </Button>
                             </div>
 
-                            <span className="text-sm font-semibold text-foreground">
+                            <span className="text-sm font-semibold tabular-nums text-foreground">
                               {formatPrice(item.subtotal)}
                             </span>
                           </div>
@@ -367,16 +346,16 @@ export default function CartPage() {
             </div>
 
             {/* Summary column */}
-            <div className="lg:sticky lg:top-8 lg:self-start">
+            <div className="lg:sticky lg:top-6 lg:self-start">
               <Card>
                 <CardHeader>
-                  <CardTitle>Order Summary</CardTitle>
+                  <CardTitle>Order summary</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {/* Subtotal */}
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Subtotal</span>
-                    <span className="text-muted-foreground">
+                    <span className="tabular-nums text-foreground">
                       {formatPrice(cart!.subtotal)}
                     </span>
                   </div>
@@ -384,12 +363,12 @@ export default function CartPage() {
                   {/* Coupon section */}
                   <div className="space-y-2">
                     {cart!.coupon_code ? (
-                      <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                      <div className="flex items-center justify-between rounded-lg border border-success/30 bg-success/5 px-3 py-2">
                         <div className="flex items-center gap-2">
-                          <Tag className="size-3.5 text-emerald-600" />
+                          <Tag className={cn("size-3.5", TONE_TEXT_CLASS.success)} aria-hidden />
                           <Badge
                             variant="outline"
-                            className="border-emerald-300 bg-emerald-100 text-emerald-700"
+                            className={cn("font-mono", TONE_BADGE_CLASS.success)}
                           >
                             {cart!.coupon_code}
                           </Badge>
@@ -397,7 +376,7 @@ export default function CartPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-auto px-2 py-1 text-xs text-muted-foreground hover:text-red-600"
+                          className="h-auto px-2 py-1 text-xs text-muted-foreground hover:text-destructive"
                           disabled={couponLoading}
                           onClick={handleRemoveCoupon}
                         >
@@ -412,6 +391,7 @@ export default function CartPage() {
                       <div className="flex gap-2">
                         <Input
                           placeholder="Coupon code"
+                          aria-label="Coupon code"
                           value={couponInput}
                           onChange={(e) => {
                             setCouponInput(e.target.value);
@@ -438,7 +418,7 @@ export default function CartPage() {
                       </div>
                     )}
                     {couponError && (
-                      <p className="text-xs text-red-600">{couponError}</p>
+                      <p className="text-xs text-destructive">{couponError}</p>
                     )}
                   </div>
 
@@ -446,7 +426,7 @@ export default function CartPage() {
                   {cart!.discount_amount > 0 && (
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Discount</span>
-                      <span className="text-emerald-600">
+                      <span className={cn("tabular-nums", TONE_TEXT_CLASS.success)}>
                         -{formatPrice(cart!.discount_amount)}
                       </span>
                     </div>
@@ -459,19 +439,19 @@ export default function CartPage() {
                     <span className="text-sm font-medium text-muted-foreground">
                       Total
                     </span>
-                    <span className="text-xl font-bold text-foreground">
+                    <span className="text-xl font-semibold tabular-nums text-foreground">
                       {formatPrice(cart!.total)}
                     </span>
                   </div>
 
                   {/* Checkout button */}
                   <Button
-                    className="w-full bg-primary hover:opacity-90"
-                    size="lg"
+                    className="w-full"
+                    size="xl"
                     onClick={() => router.push("/checkout")}
                   >
-                    Proceed to Checkout
-                    <ArrowRight className="ml-2 size-4" />
+                    Proceed to checkout
+                    <ArrowRight data-icon="inline-end" />
                   </Button>
 
                   {/* Continue shopping */}
@@ -480,7 +460,7 @@ export default function CartPage() {
                       href="/products"
                       className="text-sm text-muted-foreground hover:text-primary hover:underline"
                     >
-                      Continue Shopping
+                      Continue shopping
                     </Link>
                   </div>
                 </CardContent>
@@ -489,6 +469,6 @@ export default function CartPage() {
           </div>
         )}
       </div>
-    </div>
+    </PageContainer>
   );
 }

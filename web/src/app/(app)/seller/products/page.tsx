@@ -11,6 +11,10 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
+import { AccessDenied } from "@/components/ui/access-denied";
+import { EmptyState } from "@/components/empty-state";
 import {
   Table,
   TableHeader,
@@ -69,69 +73,37 @@ export default function SellerProductsPage() {
   if (authLoading) return null;
 
   if (!user || !isSeller) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <Package className="mx-auto size-12 text-muted-foreground" />
-          <h2 className="mt-4 text-lg font-semibold text-foreground">
-            Access Denied
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Product management is only available to sellers and admins.
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDenied description="Product management is only available to sellers and admins." />;
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-primary">
-                <Package className="size-5 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">
-                  My Products
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  {products.length} products in your catalog
-                </p>
-              </div>
-            </div>
+    <PageContainer>
+      <PageHeader
+        icon={Package}
+        title="Your products"
+        description={loading ? "Your catalogue" : `${products.length} products in your catalogue`}
+        actions={
+          <Dialog>
+            <DialogTrigger render={<Button />}>
+              <Plus />
+              Add product
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Coming soon</DialogTitle>
+                <DialogDescription>
+                  Product creation is not yet available. Full seller
+                  capabilities including product creation, editing,
+                  and inventory management are on the roadmap.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter showCloseButton>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
-            <Dialog>
-              <DialogTrigger
-                render={
-                  <Button className="bg-primary text-primary-foreground hover:opacity-90" />
-                }
-              >
-                <Plus className="mr-2 size-4" />
-                Add Product
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Coming Soon</DialogTitle>
-                  <DialogDescription>
-                    Product creation is not yet available. Full seller
-                    capabilities including product creation, editing,
-                    and inventory management are on the roadmap.
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter showCloseButton>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Loading */}
         {loading && (
           <div className="flex items-center justify-center py-20">
@@ -148,12 +120,7 @@ export default function SellerProductsPage() {
 
         {/* Empty */}
         {!loading && !error && products.length === 0 && (
-          <div className="py-20 text-center">
-            <Package className="mx-auto size-10 text-muted-foreground" />
-            <p className="mt-3 text-sm text-muted-foreground">
-              You have no products yet.
-            </p>
-          </div>
+          <EmptyState icon={Package} title="No products yet" description="Products you list will show up here." />
         )}
 
         {/* Product table */}
@@ -163,7 +130,7 @@ export default function SellerProductsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[60px]">Image</TableHead>
+                    <TableHead className="w-[60px]"><span className="sr-only">Image</span></TableHead>
                     <TableHead>Product</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead className="text-right">Price</TableHead>
@@ -182,7 +149,7 @@ export default function SellerProductsPage() {
                     >
                       <TableCell>
                         <img
-                          src={productImageUrl(product.id, 48, 48, product.image_url, product.category)}
+                          src={productImageUrl(product.id, 48, 48, product.image_url, product.category, product.name)}
                           alt={product.name}
                           className="size-10 rounded-md object-cover bg-muted"
                         />
@@ -217,7 +184,7 @@ export default function SellerProductsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <span className="flex items-center justify-end gap-1 text-xs">
-                          <Star className="size-3 fill-amber-400 text-amber-400" />
+                          <Star className="size-3 fill-warning text-warning" aria-hidden />
                           {product.rating?.toFixed(1) ?? "N/A"}
                           <span className="text-muted-foreground">
                             ({product.review_count ?? 0})
@@ -226,15 +193,9 @@ export default function SellerProductsPage() {
                       </TableCell>
                       <TableCell className="text-center">
                         {product.is_active ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-green-700">
-                            <CheckCircle className="size-3" />
-                            Active
-                          </span>
+                          <StatusBadge label="Active" tone="success" icon={CheckCircle} />
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-xs text-red-600">
-                            <XCircle className="size-3" />
-                            Inactive
-                          </span>
+                          <StatusBadge label="Inactive" tone="neutral" icon={XCircle} />
                         )}
                       </TableCell>
                     </TableRow>
@@ -244,7 +205,6 @@ export default function SellerProductsPage() {
             </CardContent>
           </Card>
         )}
-      </div>
-    </div>
+    </PageContainer>
   );
 }

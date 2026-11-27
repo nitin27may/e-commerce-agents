@@ -27,6 +27,8 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-solid: var(--destructive-solid);
+  --color-destructive-solid-foreground: var(--destructive-solid-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
@@ -70,7 +72,12 @@
   --accent: oklch(0.93 0.02 200);
   --accent-foreground: oklch(0.25 0.05 220);
   --destructive: oklch(0.577 0.245 27.325);
-  --success: oklch(0.55 0.14 150);
+  /* Filled red surfaces (sale badges, confirm-cancel). Same as --destructive in
+     light; dark mode needs its own because white on the dark --destructive is 2.9:1. */
+  --destructive-solid: oklch(0.577 0.245 27.325);
+  --destructive-solid-foreground: oklch(0.985 0 0);
+  /* 0.50 rather than 0.55 so 12px white text on a success fill clears 4.5:1. */
+  --success: oklch(0.50 0.14 150);
   --success-foreground: oklch(0.985 0.005 150);
   --warning: oklch(0.68 0.16 80);
   --warning-foreground: oklch(0.22 0.05 80);
@@ -111,6 +118,8 @@
   --accent: oklch(0.26 0.03 220);
   --accent-foreground: oklch(0.92 0.005 220);
   --destructive: oklch(0.704 0.191 22.216);
+  --destructive-solid: oklch(0.55 0.2 25);
+  --destructive-solid-foreground: oklch(0.985 0 0);
   --success: oklch(0.72 0.17 150);
   --success-foreground: oklch(0.14 0.02 150);
   --warning: oklch(0.78 0.15 80);

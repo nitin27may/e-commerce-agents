@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Sparkles, ArrowUp, Loader2, User as UserIcon, Bot } from "lucide-react";
+import { ArrowUp, Loader2, User as UserIcon, Bot } from "lucide-react";
 import { api, type AgentStep, type GroundingReport } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { RichMessage } from "@/components/chat/rich-message";
@@ -104,7 +104,7 @@ function Assistant() {
         {messages.length === 0 ? (
           <div className="mx-auto max-w-xl py-10 text-center">
             <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-primary/10">
-              <Sparkles className="size-6 text-primary" />
+              <Bot className="size-6 text-primary" aria-hidden />
             </div>
             <h1 className="mt-4 text-xl font-bold tracking-tight">Shopping assistant</h1>
             <p className="mt-1 text-sm text-muted-foreground">

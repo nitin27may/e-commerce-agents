@@ -1,14 +1,34 @@
 import { type LucideIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-export function EmptyState({ icon: Icon, title, description, children }: { icon: LucideIcon; title: string; description?: string; children?: React.ReactNode }) {
+/** The one empty state for lists, queues and searches with nothing to show. */
+export function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  children,
+  className,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description?: React.ReactNode;
+  children?: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="mb-4 rounded-full bg-muted p-4">
-        <Icon className="size-8 text-muted-foreground" />
+    <div
+      data-slot="empty-state"
+      className={cn(
+        "flex flex-col items-center justify-center rounded-xl border border-dashed border-border px-6 py-14 text-center",
+        className,
+      )}
+    >
+      <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-muted">
+        <Icon className="size-6 text-muted-foreground" aria-hidden />
       </div>
-      <h3 className="text-lg font-medium text-foreground">{title}</h3>
-      {description && <p className="mt-1 text-sm text-muted-foreground max-w-sm">{description}</p>}
-      {children && <div className="mt-4">{children}</div>}
+      <h2 className="text-base font-semibold text-foreground">{title}</h2>
+      {description && <p className="mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>}
+      {children && <div className="mt-4 flex flex-wrap justify-center gap-2">{children}</div>}
     </div>
   );
 }

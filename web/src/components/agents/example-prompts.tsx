@@ -12,8 +12,8 @@ interface ExamplePromptsProps {
 export function ExamplePrompts({ agent }: ExamplePromptsProps) {
   return (
     <section>
-      <h2 className="mb-3 text-sm font-semibold text-foreground">
-        Try it — example prompts
+      <h2 className="mb-3 text-base font-semibold text-foreground">
+        Example prompts
       </h2>
       <div className="flex flex-wrap gap-2">
         {agent.examplePrompts.map((prompt) => (

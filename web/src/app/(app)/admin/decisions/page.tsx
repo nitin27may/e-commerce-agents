@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Gauge, Loader2, Play, RefreshCw } from "lucide-react";
+import { Gauge, Info, Loader2, Play, RefreshCw } from "lucide-react";
 import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api, type AutonomyBudget, type AutonomyDecision, type AutonomyDecisionsResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
-import { DecisionCard, money } from "@/components/admin/decision-card";
+import { DecisionCard, formatBudgetPeriod, money } from "@/components/admin/decision-card";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
+import { AccessDenied } from "@/components/ui/access-denied";
 
 // After a demo event is sent the worker decides it a moment later. Look a few times, then stop on our own.
 const POLL_INTERVAL_MS = 2000;
@@ -22,35 +24,50 @@ const FILTERS: { value: string; label: string }[] = [
   { value: "executed", label: "Done by the system" },
   { value: "awaiting_approval", label: "Waiting for approval" },
   { value: "reversed", label: "Reversed" },
-  { value: "no_action", label: "Nothing to do" },
+  { value: "no_action", label: "No action needed" },
 ];
+
+function budgetName(key: string): string {
+  const words = key.replaceAll("_", " ");
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+}
 
 function BudgetMeter({ budget }: { budget: AutonomyBudget }) {
   const pct = Math.min(100, Math.round((budget.used_count / Math.max(budget.max_count, 1)) * 100));
   return (
-    <div className="rounded-lg border p-3 text-sm" data-testid="budget-meter">
-      <p className="font-medium">{budget.budget_key.replaceAll("_", " ")} budget</p>
-      <p className="text-muted-foreground">
-        {budget.used_count} of {budget.max_count} actions and {money(budget.used_amount)} of {money(budget.max_amount)} used
-        today ({budget.day}, UTC)
+    <div className="rounded-xl bg-card p-4 text-sm ring-1 ring-foreground/10" data-testid="budget-meter">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="font-medium">{budgetName(budget.budget_key)}</p>
+        <p className="text-xs text-muted-foreground">{formatBudgetPeriod(budget.day)}</p>
+      </div>
+      <p className="mt-1 flex flex-wrap justify-between gap-x-3 text-muted-foreground tabular-nums">
+        <span>
+          <span className="font-medium text-foreground">
+            {budget.used_count} of {budget.max_count}
+          </span>{" "}
+          actions today
+        </span>
+        <span>
+          {money(budget.used_amount)} of {money(budget.max_amount)}
+        </span>
       </p>
       <div
         role="progressbar"
-        aria-label={`${budget.budget_key} actions used today`}
+        aria-label={`${budgetName(budget.budget_key)} actions used today`}
         aria-valuemin={0}
         aria-valuemax={budget.max_count}
         aria-valuenow={budget.used_count}
-        className="mt-2 h-2 w-full overflow-hidden rounded bg-muted"
+        className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted"
       >
-        <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+        <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
       </div>
       {budget.month_max_count != null && budget.month_max_amount != null && (
-        <p className="mt-2 text-sm text-muted-foreground" data-testid="budget-month">
-          This month ({budget.month ?? "UTC"}): {budget.month_used_count ?? 0} of {budget.month_max_count} actions and{" "}
-          {money(budget.month_used_amount ?? "0")} of {money(budget.month_max_amount)} used.
+        <p className="mt-2 text-xs text-muted-foreground" data-testid="budget-month">
+          {formatBudgetPeriod(budget.month) || "This month"}: {budget.month_used_count ?? 0} of {budget.month_max_count} actions,{" "}
+          {money(budget.month_used_amount ?? "0")} of {money(budget.month_max_amount)} used
         </p>
       )}
-      <p className="mt-2 text-xs text-muted-foreground">
+      <p className="mt-1 text-xs text-muted-foreground">
         At most {money(budget.per_action_max_amount)} per action, {budget.per_customer_max_count} per customer per day (
         {money(budget.per_customer_max_amount)}), {budget.per_order_max_count} per order.
       </p>
@@ -204,54 +221,49 @@ export default function AutonomyDecisionsPage() {
 
   if (authLoading) return null;
   if (!user || !isAdmin) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <EmptyState icon={Gauge} title="Access Denied" description="Autonomous decisions are for admins." />
-      </div>
-    );
+    return <AccessDenied description="Autonomous decisions are for admins." />;
   }
 
   const scenarios = Object.entries(data?.scenarios ?? {});
   const eventScenarios = Object.entries(data?.event_scenarios ?? {});
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Autonomous decisions</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            What the system did on its own, what it asked about, and the budget each one drew on. An action can be reversed
-            while it is reversible.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+    <PageContainer className="space-y-6">
+      <PageHeader
+        icon={Gauge}
+        title="Decisions"
+        description="Actions the system took or asked about on its own, and the budget each drew on. Reversible actions can be undone."
+        actions={
           <Button type="button" size="sm" variant="outline" onClick={refresh} disabled={refreshing}>
             {refreshing ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
             Refresh
           </Button>
-        {(scenarios.length > 0 || eventScenarios.length > 0) && (
-          <div role="group" aria-label="Send a demo event" className="flex flex-wrap gap-2">
-            {scenarios.map(([name, days]) => (
-              <Button key={name} type="button" size="sm" variant="outline" onClick={() => simulate(name)} disabled={simulating !== null}>
-                {simulating === name ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Play data-icon="inline-start" />}
-                {name} delay ({days} days)
-              </Button>
-            ))}
-            {eventScenarios.map(([name]) => (
-              <Button key={name} type="button" size="sm" variant="outline" onClick={() => simulate(name)} disabled={simulating !== null}>
-                {simulating === name ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Play data-icon="inline-start" />}
-                {name.replaceAll("-", " ")}
-              </Button>
-            ))}
-          </div>
-        )}
+        }
+      />
+
+      {(scenarios.length > 0 || eventScenarios.length > 0) && (
+        <div role="group" aria-label="Send a demo event" className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground">Send a demo event</span>
+          {scenarios.map(([name, days]) => (
+            <Button key={name} type="button" size="sm" variant="outline" onClick={() => simulate(name)} disabled={simulating !== null}>
+              {simulating === name ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Play data-icon="inline-start" />}
+              {name} delay ({days} days)
+            </Button>
+          ))}
+          {eventScenarios.map(([name]) => (
+            <Button key={name} type="button" size="sm" variant="outline" onClick={() => simulate(name)} disabled={simulating !== null}>
+              {simulating === name ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Play data-icon="inline-start" />}
+              {name.replaceAll("-", " ")}
+            </Button>
+          ))}
         </div>
-      </div>
+      )}
 
       {data && !data.enabled && (
-        <p role="status" className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
-          Event autonomy is switched off (AUTONOMY_ENABLED), so the system is not acting on events. Past decisions are
-          still listed and can be reversed.
+        <p role="status" className="flex items-start gap-2 rounded-lg border border-info/30 bg-info/5 px-3 py-2 text-sm">
+          <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
+          Automatic actions are switched off, so the system is not acting on new events. Past decisions are still
+          listed and can be reversed.
         </p>
       )}
       {notice && (
@@ -266,7 +278,7 @@ export default function AutonomyDecisionsPage() {
       )}
 
       {data && data.budgets.length > 0 && (
-        <section aria-label="Budgets" className="grid gap-3 sm:grid-cols-2">
+        <section aria-label="Budgets" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {data.budgets.map((b) => (
             <BudgetMeter key={b.budget_key} budget={b} />
           ))}
@@ -316,6 +328,6 @@ export default function AutonomyDecisionsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

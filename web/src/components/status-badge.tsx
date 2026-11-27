@@ -8,7 +8,7 @@ const STATUS_CONFIG: Record<string, { label: string; tone: SemanticTone; icon: L
   placed: { label: "Placed", tone: "info", icon: ShoppingCart },
   confirmed: { label: "Confirmed", tone: "info", icon: Package },
   shipped: { label: "Shipped", tone: "warning", icon: Truck },
-  out_for_delivery: { label: "Out for Delivery", tone: "warning", icon: Truck },
+  out_for_delivery: { label: "Out for delivery", tone: "warning", icon: Truck },
   delivered: { label: "Delivered", tone: "success", icon: CheckCircle },
   returned: { label: "Returned", tone: "warning", icon: RotateCcw },
   cancelled: { label: "Cancelled", tone: "destructive", icon: XCircle },

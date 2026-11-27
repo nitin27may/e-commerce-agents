@@ -8,9 +8,14 @@ import { api, apiUrl, type OrderDetail, type OrderLine as OrderItem, type OrderR
 
 type StatusHistoryEntry = OrderDetail["status_history"][number];
 import { toastOrderCancelled, toastReturnInitiated } from "@/lib/toast";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { CHIP_CLASS, TONE_BADGE_CLASS } from "@/components/ui/status-badge";
+import Link from "next/link";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { StatusBadge, TONE_BADGE_CLASS, TONE_TEXT_CLASS } from "@/components/ui/status-badge";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
+import { OrderStatusBadge, STATUS_CONFIG as ORDER_STATUS } from "@/components/status-badge";
+import { ErrorState } from "@/components/error-state";
+import { formatDate, formatPrice } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import {
   Card,
@@ -41,49 +46,20 @@ import {
   Truck,
   Clock,
   CheckCircle,
-  XCircle,
   RotateCcw,
   MapPin,
   Loader2,
   Download,
   Ban,
-  AlertCircle,
 } from "lucide-react";
 import { productImageUrl } from "@/lib/images";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function formatPrice(price: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(price);
-}
-
-function formatDate(dateStr: string): string {
-  try {
-    return new Date(dateStr).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return dateStr;
-  }
-}
 
 function formatTimestamp(dateStr: string): string {
   try {
     return new Date(dateStr).toLocaleString("en-US", {
       month: "short",
       day: "numeric",
-      hour: "2-digit",
+      hour: "numeric",
       minute: "2-digit",
     });
   } catch {
@@ -91,125 +67,80 @@ function formatTimestamp(dateStr: string): string {
   }
 }
 
-const STATUS_CONFIG: Record<
-  string,
-  { color: string; dotColor: string; icon: React.ElementType; label: string }
-> = {
-  placed: {
-    color: TONE_BADGE_CLASS.info,
-    dotColor: "bg-info",
-    icon: Clock,
-    label: "Placed",
-  },
-  confirmed: {
-    color: CHIP_CLASS.primary,
-    dotColor: "bg-primary",
-    icon: CheckCircle,
-    label: "Confirmed",
-  },
-  shipped: {
-    color: TONE_BADGE_CLASS.warning,
-    dotColor: "bg-warning",
-    icon: Truck,
-    label: "Shipped",
-  },
-  delivered: {
-    color: TONE_BADGE_CLASS.success,
-    dotColor: "bg-success",
-    icon: CheckCircle,
-    label: "Delivered",
-  },
-  returned: {
-    color: TONE_BADGE_CLASS.neutral,
-    dotColor: "bg-muted-foreground",
-    icon: RotateCcw,
-    label: "Returned",
-  },
-  cancelled: {
-    color: TONE_BADGE_CLASS.destructive,
-    dotColor: "bg-destructive",
-    icon: XCircle,
-    label: "Cancelled",
-  },
-};
-
-function getStatusConfig(status: string) {
-  const key = status.toLowerCase();
-  return (
-    STATUS_CONFIG[key] || {
-      color: "border-border bg-muted/50 text-muted-foreground",
-      dotColor: "bg-muted-foreground",
-      icon: Package,
-      label: status,
-    }
-  );
+function statusLabel(status: string): string {
+  const cfg = ORDER_STATUS[status.toLowerCase()];
+  if (cfg) return cfg.label;
+  const words = status.replace(/_/g, " ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/** The seed writes notes like "Order out_for_delivery" that only restate the step's status. */
+function isRedundantNote(note: string, status: string): boolean {
+  const norm = (v: string) => v.toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ").trim();
+  const n = norm(note);
+  const st = norm(status);
+  return n === st || n === `order ${st}` || n === norm(statusLabel(status)) || n === `order ${norm(statusLabel(status))}`;
+}
+
+/** Customer-facing return status; the API sends snake_case states. */
+function returnStatusLabel(status: string): string {
+  const words = status.replace(/_/g, " ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+const REFUND_METHOD_LABEL: Record<string, string> = {
+  original_payment: "Original payment",
+  store_credit: "Store credit",
+};
+
 // ---------------------------------------------------------------------------
-// Status Timeline
+// Status timeline
 // ---------------------------------------------------------------------------
 
 function StatusTimeline({ history }: { history: StatusHistoryEntry[] }) {
   if (!history || history.length === 0) return null;
 
   return (
-    <div className="relative space-y-0">
+    <ol className="relative">
       {history.map((entry, idx) => {
         const isLatest = idx === history.length - 1;
-        const isLast = idx === history.length - 1;
-        const cfg = getStatusConfig(entry.status);
+        const cfg = ORDER_STATUS[entry.status.toLowerCase()];
+        const Icon = cfg?.icon ?? Clock;
+        const tone = cfg?.tone ?? "neutral";
+        const note = entry.notes && !isRedundantNote(entry.notes, entry.status) ? entry.notes : null;
 
         return (
-          <div key={idx} className="relative flex gap-4 pb-6 last:pb-0">
-            {/* Vertical line */}
-            {!isLast && (
-              <div className="absolute left-[11px] top-6 h-[calc(100%-12px)] w-0.5 bg-border" />
+          <li key={idx} className="relative flex gap-3 pb-5 last:pb-0">
+            {!isLatest && (
+              <div className="absolute left-[13px] top-8 bottom-1 w-px bg-border" aria-hidden />
             )}
-
-            {/* Dot */}
             <div
-              className={`relative z-10 mt-1 size-6 shrink-0 rounded-full border-2 ${
-                isLatest
-                  ? `${cfg.dotColor} border-card ring-2 ring-offset-1 ring-${cfg.dotColor}`
-                  : "border-border bg-card"
-              } flex items-center justify-center`}
+              className={cn(
+                "relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full border",
+                isLatest ? TONE_BADGE_CLASS[tone] : "border-border bg-muted text-muted-foreground",
+              )}
             >
-              {isLatest && (
-                <div className="size-2 rounded-full bg-card" />
-              )}
-              {!isLatest && (
-                <div className="size-2 rounded-full bg-muted-foreground" />
-              )}
+              <Icon className="size-3.5" aria-hidden />
             </div>
-
-            {/* Content */}
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`text-sm font-medium ${
-                    isLatest ? "text-foreground" : "text-muted-foreground"
-                  }`}
-                >
-                  {cfg.label}
+            <div className="min-w-0 flex-1 pt-0.5">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className={cn("text-sm font-medium", isLatest ? "text-foreground" : "text-muted-foreground")}>
+                  {statusLabel(entry.status)}
                 </span>
-                <span className="text-xs text-muted-foreground">
-                  {formatTimestamp(entry.timestamp)}
-                </span>
+                <span className="text-xs text-muted-foreground">{formatTimestamp(entry.timestamp)}</span>
               </div>
-              {entry.notes && (
-                <p className="mt-0.5 text-sm text-muted-foreground">{entry.notes}</p>
-              )}
+              {note && <p className="mt-0.5 text-sm text-muted-foreground">{note}</p>}
               {entry.location && (
                 <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                  <MapPin className="size-3" />
+                  <MapPin className="size-3" aria-hidden />
                   {entry.location}
                 </p>
               )}
             </div>
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ol>
   );
 }
 
@@ -318,62 +249,49 @@ export default function OrderDetailPage() {
 
   if (authLoading || !user) return null;
 
-  const statusCfg = order ? getStatusConfig(order.status) : null;
+  const ret: ReturnInfo | null | undefined = order?.["return"];
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-          {/* Back button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mb-4 -ml-2 text-muted-foreground hover:text-muted-foreground"
-            onClick={() => router.push("/orders")}
-          >
-            <ArrowLeft className="mr-1.5 size-4" />
-            Back to Orders
-          </Button>
+    <PageContainer>
+      <Link
+        href="/orders"
+        className={cn(buttonVariants({ variant: "ghost", size: "sm", className: "-ml-2 mb-4 text-muted-foreground" }))}
+      >
+        <ArrowLeft data-icon="inline-start" />
+        Back to orders
+      </Link>
 
-          {loading && <DetailSkeleton />}
-          {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              {error}
-            </div>
-          )}
+      {loading && <DetailSkeleton />}
+      {error && (
+        <ErrorState inline message={error} onRetry={loadOrder} homeHref="/orders" homeLabel="Back to orders" />
+      )}
 
-          {!loading && !error && order && statusCfg && (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="text-2xl font-bold text-foreground">
-                    Order #{order.id}
-                  </h1>
-                  <Badge variant="outline" className={statusCfg.color}>
-                    {statusCfg.label}
-                  </Badge>
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Placed on {formatDate(order.date)}
-                </p>
-              </div>
-
-              {/* Cancel / Return action buttons */}
-              <div className="flex items-center gap-2">
+      {!loading && !error && order && (
+        <>
+          <PageHeader
+            icon={Package}
+            title={
+              <span className="flex flex-wrap items-center gap-3">
+                Order #{order.id.slice(0, 8)}
+                <OrderStatusBadge status={order.status} />
+              </span>
+            }
+            description={`Placed on ${formatDate(order.date)}`}
+            actions={
+              <>
                 {(order.status === "placed" || order.status === "confirmed") && (
                   <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
                     <DialogTrigger
                       render={
-                        <Button variant="outline" className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive">
-                          <Ban className="mr-1.5 size-4" />
-                          Cancel Order
+                        <Button variant="destructive">
+                          <Ban data-icon="inline-start" />
+                          Cancel order
                         </Button>
                       }
                     />
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Cancel Order</DialogTitle>
+                        <DialogTitle>Cancel order</DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4 pt-2">
                         <div className="space-y-2">
@@ -387,31 +305,32 @@ export default function OrderDetailPage() {
                           />
                         </div>
                         <Button
-                          className="w-full bg-destructive text-white hover:bg-destructive/90"
+                          variant="destructive-solid"
+                          className="w-full"
                           disabled={cancelling || !cancelReason.trim()}
                           onClick={handleCancelOrder}
                         >
-                          {cancelling && <Loader2 className="mr-2 size-4 animate-spin" />}
-                          Confirm Cancellation
+                          {cancelling && <Loader2 className="animate-spin" data-icon="inline-start" />}
+                          Confirm cancellation
                         </Button>
                       </div>
                     </DialogContent>
                   </Dialog>
                 )}
 
-                {order.status === "delivered" && !order["return"] && (
+                {order.status === "delivered" && !ret && (
                   <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
                     <DialogTrigger
                       render={
-                        <Button variant="outline" className="border-warning/40 text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning hover:bg-warning/10">
-                          <RotateCcw className="mr-1.5 size-4" />
-                          Return Order
+                        <Button variant="outline">
+                          <RotateCcw data-icon="inline-start" />
+                          Return order
                         </Button>
                       }
                     />
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Return Order</DialogTitle>
+                        <DialogTitle>Return order</DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4 pt-2">
                         <div className="space-y-2">
@@ -431,78 +350,60 @@ export default function OrderDetailPage() {
                               type="button"
                               variant={refundMethod === "original_payment" ? "default" : "outline"}
                               size="sm"
-                              className={refundMethod === "original_payment" ? "bg-primary hover:opacity-90" : ""}
+                              aria-pressed={refundMethod === "original_payment"}
                               onClick={() => setRefundMethod("original_payment")}
                             >
-                              Original Payment
+                              Original payment
                             </Button>
                             <Button
                               type="button"
                               variant={refundMethod === "store_credit" ? "default" : "outline"}
                               size="sm"
-                              className={refundMethod === "store_credit" ? "bg-primary hover:opacity-90" : ""}
+                              aria-pressed={refundMethod === "store_credit"}
                               onClick={() => setRefundMethod("store_credit")}
                             >
-                              Store Credit
+                              Store credit
                             </Button>
                           </div>
                         </div>
                         <Button
-                          className="w-full bg-warning text-warning-foreground hover:bg-warning/90"
+                          className="w-full"
                           disabled={returning || !returnReason.trim()}
                           onClick={handleReturnOrder}
                         >
-                          {returning && <Loader2 className="mr-2 size-4 animate-spin" />}
-                          Submit Return
+                          {returning && <Loader2 className="animate-spin" data-icon="inline-start" />}
+                          Submit return
                         </Button>
                       </div>
                     </DialogContent>
                   </Dialog>
                 )}
+              </>
+            }
+          />
+
+          {justPlaced && (
+            <div className="mb-6 flex flex-col gap-3 rounded-xl border border-success/30 bg-success/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className={cn("flex items-center gap-3", TONE_TEXT_CLASS.success)}>
+                <CheckCircle className="size-5 shrink-0" aria-hidden />
+                <div>
+                  <p className="font-medium">Order placed</p>
+                  <p className="text-sm">We are getting it ready.</p>
+                </div>
               </div>
+              <Link href="/products" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                Continue shopping
+              </Link>
             </div>
           )}
-        </div>
-      </div>
 
-      {/* Order Placed Confirmation Banner */}
-      {justPlaced && !loading && !error && order && (
-        <div className="border-b border-success/30 bg-success/10">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-            <div className="flex items-center gap-3">
-              <CheckCircle className="size-5 text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success shrink-0" />
-              <div>
-                <p className="font-medium text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success">
-                  Order placed successfully!
-                </p>
-                <p className="text-sm text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success">
-                  Your order is being processed.
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0 border-success/40 text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success hover:bg-success/15"
-              onClick={() => router.push("/products")}
-            >
-              Continue Shopping
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Content */}
-      {!loading && !error && order && (
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <div className="grid gap-8 lg:grid-cols-3">
+          <div className="grid gap-6 lg:grid-cols-3">
             {/* Left column: timeline, items */}
-            <div className="space-y-8 lg:col-span-2">
-              {/* Status Timeline */}
+            <div className="min-w-0 space-y-6 lg:col-span-2">
               {order.status_history && order.status_history.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Order Status</CardTitle>
+                    <CardTitle>Order status</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <StatusTimeline history={order.status_history} />
@@ -510,27 +411,19 @@ export default function OrderDetailPage() {
                 </Card>
               )}
 
-              {/* Order Items */}
               <Card>
                 <CardHeader>
-                  <CardTitle>
-                    Items ({order.items.length})
-                  </CardTitle>
+                  <CardTitle>Items ({order.items.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Table>
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
-                        <TableHead className="w-12"></TableHead>
+                        <TableHead className="w-14"><span className="sr-only">Image</span></TableHead>
                         <TableHead>Product</TableHead>
-                        <TableHead>Category</TableHead>
                         <TableHead className="text-right">Qty</TableHead>
-                        <TableHead className="text-right">
-                          Unit Price
-                        </TableHead>
-                        <TableHead className="text-right">
-                          Subtotal
-                        </TableHead>
+                        <TableHead className="text-right">Unit price</TableHead>
+                        <TableHead className="text-right">Subtotal</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -538,36 +431,31 @@ export default function OrderDetailPage() {
                         <TableRow
                           key={idx}
                           className="cursor-pointer hover:bg-accent"
-                          onClick={() =>
-                            router.push(`/products/${item.product_id}`)
-                          }
+                          onClick={() => router.push(`/products/${item.product_id}`)}
                         >
-                          <TableCell>
+                          <TableCell className="w-14">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={productImageUrl(item.product_id, 48, 48, item.image_url, item.category)}
-                              alt={item.name}
-                              className="size-10 rounded-md object-cover bg-muted"
-                              loading="lazy"
+                              src={productImageUrl(item.product_id, 96, 96, item.image_url, item.category, item.name)}
+                              alt=""
+                              className="size-10 min-w-10 rounded-md bg-muted object-cover"
                             />
                           </TableCell>
-                          <TableCell className="font-medium text-foreground">
-                            {item.name}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className="text-xs font-normal"
+                          <TableCell className="whitespace-normal">
+                            <Link
+                              href={`/products/${item.product_id}`}
+                              className="line-clamp-1 font-medium text-foreground hover:text-primary"
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              {item.category}
-                            </Badge>
+                              {item.name}
+                            </Link>
+                            <span className="text-xs text-muted-foreground">{item.category}</span>
                           </TableCell>
-                          <TableCell className="text-right">
-                            {item.quantity}
-                          </TableCell>
-                          <TableCell className="text-right text-muted-foreground">
+                          <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
                             {formatPrice(item.unit_price)}
                           </TableCell>
-                          <TableCell className="text-right font-medium">
+                          <TableCell className="text-right font-medium tabular-nums">
                             {formatPrice(item.subtotal)}
                           </TableCell>
                         </TableRow>
@@ -578,19 +466,47 @@ export default function OrderDetailPage() {
               </Card>
             </div>
 
-            {/* Right column: shipping, summary, return */}
+            {/* Right column: summary, shipping, return */}
             <div className="space-y-6">
-              {/* Shipping Info */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Order summary</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="tabular-nums text-foreground">
+                      {formatPrice(order.items?.reduce((sum: number, i: OrderItem) => sum + i.subtotal, 0) ?? 0)}
+                    </span>
+                  </div>
+                  {order.discount > 0 && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Discount</span>
+                      <span className={cn("tabular-nums", TONE_TEXT_CLASS.success)}>
+                        -{formatPrice(order.discount)}
+                      </span>
+                    </div>
+                  )}
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-muted-foreground">Total</span>
+                    <span className="text-lg font-semibold tabular-nums text-foreground">
+                      {formatPrice(order.total)}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
               {order.shipping_address && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <MapPin className="size-4 text-muted-foreground" />
+                      <MapPin className="size-4 text-muted-foreground" aria-hidden />
                       Shipping
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="text-sm text-muted-foreground">
+                    <div className="text-sm text-foreground">
                       <p>{order.shipping_address.street}</p>
                       <p>
                         {order.shipping_address.city}, {order.shipping_address.state}{" "}
@@ -600,172 +516,112 @@ export default function OrderDetailPage() {
                     {order.carrier && (
                       <>
                         <Separator />
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2 text-sm">
-                            <Truck className="size-4 text-muted-foreground" />
-                            <span className="font-medium text-muted-foreground">
-                              {order.carrier}
-                            </span>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-sm text-foreground">
+                            <Truck className="size-4 text-muted-foreground" aria-hidden />
+                            {order.carrier}
                           </div>
                           {order.tracking && (
-                            <p className="font-mono text-xs text-muted-foreground pl-6">
-                              {order.tracking}
-                            </p>
+                            <p className="pl-6 font-mono text-xs text-muted-foreground">{order.tracking}</p>
                           )}
                         </div>
                       </>
                     )}
-
-                    {/* Billing Address */}
                     <Separator />
                     <div className="space-y-1">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Billing Address
-                      </p>
+                      <p className="text-xs font-medium text-muted-foreground">Billing address</p>
                       {order.billing_address &&
-                       (order.billing_address.street !== order.shipping_address.street ||
+                      (order.billing_address.street !== order.shipping_address.street ||
                         order.billing_address.city !== order.shipping_address.city ||
                         order.billing_address.state !== order.shipping_address.state ||
                         order.billing_address.zip !== order.shipping_address.zip) ? (
-                        <div className="text-sm text-muted-foreground">
+                        <div className="text-sm text-foreground">
                           {order.billing_address.name && (
-                            <p className="font-medium text-muted-foreground">{order.billing_address.name}</p>
+                            <p className="font-medium">{order.billing_address.name}</p>
                           )}
                           <p>{order.billing_address.street}</p>
                           <p>
                             {order.billing_address.city}, {order.billing_address.state}{" "}
                             {order.billing_address.zip}
                           </p>
-                          {order.billing_address.country && (
-                            <p>{order.billing_address.country}</p>
-                          )}
+                          {order.billing_address.country && <p>{order.billing_address.country}</p>}
                         </div>
                       ) : (
-                        <p className="text-sm text-muted-foreground italic">
-                          Same as shipping address
-                        </p>
+                        <p className="text-sm text-muted-foreground">Same as shipping address</p>
                       )}
                     </div>
                   </CardContent>
                 </Card>
               )}
 
-              {/* Order Summary */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Order Summary</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal</span>
-                    <span className="text-muted-foreground">
-                      {formatPrice(order.items?.reduce((sum: number, i: OrderItem) => sum + i.subtotal, 0) ?? 0)}
-                    </span>
-                  </div>
-                  {order.discount > 0 && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Discount</span>
-                      <span className="text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success">
-                        -{formatPrice(order.discount)}
-                      </span>
-                    </div>
-                  )}
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-muted-foreground">
-                      Total
-                    </span>
-                    <span className="text-lg font-bold text-foreground">
-                      {formatPrice(order.total)}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Return Info */}
-              {order["return"] && (
+              {ret && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <RotateCcw className="size-4 text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning" />
-                      Return Information
+                      <RotateCcw className="size-4 text-muted-foreground" aria-hidden />
+                      Return
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Reason</span>
-                        <span className="text-muted-foreground">
-                          {(order["return"] as ReturnInfo).reason}
-                        </span>
+                    <dl className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <dt className="text-muted-foreground">Status</dt>
+                        <dd>
+                          <StatusBadge label={returnStatusLabel(ret.status)} tone="warning" />
+                        </dd>
                       </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Status</span>
-                        <Badge
-                          variant="outline"
-                          className="border-warning/30 bg-warning/10 text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning"
-                        >
-                          {(order["return"] as ReturnInfo).status}
-                        </Badge>
+                      <div className="flex items-start justify-between gap-3">
+                        <dt className="shrink-0 text-muted-foreground">Reason</dt>
+                        <dd className="text-right text-foreground">{ret.reason}</dd>
                       </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Refund Method</span>
-                        <span className="text-muted-foreground">
-                          {(order["return"] as ReturnInfo).refund_method}
-                        </span>
+                      <div className="flex items-center justify-between gap-3">
+                        <dt className="text-muted-foreground">Refund method</dt>
+                        <dd className="text-foreground">
+                          {(ret.refund_method && REFUND_METHOD_LABEL[ret.refund_method]) ?? ret.refund_method ?? "Not set"}
+                        </dd>
                       </div>
-                      {(order["return"] as ReturnInfo).refund_amount != null && (
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">Refund Amount</span>
-                          <span className="font-medium text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success">
-                            {formatPrice((order["return"] as ReturnInfo).refund_amount!)}
-                          </span>
+                      {ret.refund_amount != null && (
+                        <div className="flex items-center justify-between gap-3">
+                          <dt className="text-muted-foreground">Refund amount</dt>
+                          <dd className={cn("font-medium tabular-nums", TONE_TEXT_CLASS.success)}>
+                            {formatPrice(ret.refund_amount)}
+                          </dd>
                         </div>
                       )}
-                    </div>
-                    {((order["return"] as ReturnInfo).created_at ||
-                      (order["return"] as ReturnInfo).resolved_at) && (
+                    </dl>
+                    {(ret.created_at || ret.resolved_at) && (
                       <>
                         <Separator />
-                        <div className="space-y-1.5">
-                          {(order["return"] as ReturnInfo).created_at && (
-                            <div className="flex items-center justify-between text-xs text-muted-foreground">
-                              <span>Return initiated</span>
-                              <span>
-                                {formatDate((order["return"] as ReturnInfo).created_at!)}
-                              </span>
+                        <div className="space-y-1.5 text-xs text-muted-foreground">
+                          {ret.created_at && (
+                            <div className="flex items-center justify-between">
+                              <span>Return started</span>
+                              <span>{formatDate(ret.created_at)}</span>
                             </div>
                           )}
-                          {(order["return"] as ReturnInfo).resolved_at && (
-                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          {ret.resolved_at && (
+                            <div className="flex items-center justify-between">
                               <span>Refund processed</span>
-                              <span>
-                                {formatDate((order["return"] as ReturnInfo).resolved_at!)}
-                              </span>
+                              <span>{formatDate(ret.resolved_at)}</span>
                             </div>
                           )}
                         </div>
                       </>
                     )}
-
-                    {/* Return Label Download */}
-                    {(order["return"] as ReturnInfo).return_label_url && (
+                    {ret.return_label_url && (
                       <>
                         <Separator />
                         <div className="space-y-2">
                           <Button
                             variant="outline"
-                            className="w-full border-warning/40 text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning hover:bg-warning/10"
-                            onClick={() => {
-                              const url = (order["return"] as ReturnInfo).return_label_url || "";
-                              window.open(apiUrl(url), "_blank");
-                            }}
+                            className="w-full"
+                            onClick={() => window.open(apiUrl(ret.return_label_url || ""), "_blank")}
                           >
-                            <Download className="mr-2 size-4" />
-                            Download Return Label
+                            <Download data-icon="inline-start" />
+                            Download return label
                           </Button>
-                          <p className="text-xs text-muted-foreground text-center">
-                            Print the return label and drop off at any carrier location
+                          <p className="text-center text-xs text-muted-foreground">
+                            Print the label and drop the parcel off at any carrier location.
                           </p>
                         </div>
                       </>
@@ -775,8 +631,8 @@ export default function OrderDetailPage() {
               )}
             </div>
           </div>
-        </div>
+        </>
       )}
-    </div>
+    </PageContainer>
   );
 }
