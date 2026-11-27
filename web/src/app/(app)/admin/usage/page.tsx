@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
-import { Separator } from "@/components/ui/separator";
+import { formatDuration, formatNumber } from "@/lib/format";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
+import { AccessDenied } from "@/components/ui/access-denied";
 import { StatCard } from "@/components/ui/stat-card";
 import { SectionHeader } from "@/components/ui/section-header";
 import { ChartContainer, CHART_COLORS } from "@/components/ui/chart";
@@ -24,7 +26,6 @@ import {
   Clock,
   Coins,
   Loader2,
-  ShieldAlert,
   BarChart3,
 } from "lucide-react";
 import {
@@ -73,34 +74,10 @@ interface UsageStats {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatNumber(n: number | undefined | null): string {
-  if (n == null) return "0";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
-
+// Sub-dollar costs keep four decimals: a demo run costs fractions of a cent.
 function formatCost(usd: number | undefined | null): string {
-  if (!usd) return "—";
+  if (!usd) return "-";
   return `$${usd.toFixed(usd < 1 ? 4 : 2)}`;
-}
-
-function formatDuration(ms: number | undefined | null): string {
-  if (ms == null) return "0ms";
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
-}
-
-function formatDate(dateStr: string): string {
-  try {
-    return new Date(dateStr).toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return dateStr;
-  }
 }
 
 function shortDate(dateStr: string): string {
@@ -196,35 +173,16 @@ export default function AdminUsagePage() {
   if (authLoading) return null;
 
   if (!isAdmin) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-destructive/10">
-            <ShieldAlert className="size-8 text-destructive" />
-          </div>
-          <h2 className="mt-4 text-lg font-semibold">Access Denied</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            You do not have admin privileges to view this page.
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDenied description="You do not have admin privileges to view this page." />;
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* Header */}
-      <div className="mb-8 flex items-center gap-3">
-        <div className="flex size-10 items-center justify-center rounded-lg bg-primary">
-          <BarChart3 className="size-5 text-primary-foreground" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Usage Analytics</h1>
-          <p className="text-sm text-muted-foreground">
-            Detailed token and invocation metrics across all agents
-          </p>
-        </div>
-      </div>
+    <PageContainer>
+      <PageHeader
+        icon={BarChart3}
+        title="Usage"
+        description="Invocations, tokens and cost across all agents"
+      />
 
       {loading && (
         <div className="flex items-center justify-center py-20">
@@ -242,33 +200,32 @@ export default function AdminUsagePage() {
       )}
 
       {!loading && !error && stats && (
-        <div className="space-y-8">
-          {/* Summary cards */}
+        <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <StatCard
-              label="Total Invocations"
+              label="Invocations"
               value={formatNumber(stats.total_invocations)}
               icon={Activity}
-              hint={`${stats.active_agents} active agents`}
+              hint={`${stats.active_agents} active ${stats.active_agents === 1 ? "agent" : "agents"}`}
             />
             <StatCard
-              label="Tokens In"
+              label="Tokens in"
               value={formatNumber(stats.total_tokens_in)}
               icon={ArrowDownToLine}
             />
             <StatCard
-              label="Tokens Out"
+              label="Tokens out"
               value={formatNumber(stats.total_tokens_out)}
               icon={ArrowUpFromLine}
             />
             <StatCard
-              label="Est. Cost"
-              value={formatCost(stats.total_cost_usd)}
+              label="Est. cost"
+              value={stats.total_cost_usd ? formatCost(stats.total_cost_usd) : "$0.00"}
               icon={Coins}
-              hint="Rows with a recorded cost"
+              hint={stats.total_cost_usd ? undefined : "No model cost recorded yet"}
             />
             <StatCard
-              label="Avg Duration"
+              label="Avg. duration"
               value={formatDuration(stats.avg_duration_ms)}
               icon={Clock}
             />
@@ -277,9 +234,8 @@ export default function AdminUsagePage() {
           {/* Daily trend chart */}
           <div className="rounded-xl bg-card p-4 ring-1 ring-foreground/10">
             <SectionHeader
-              eyebrow="Last 7 days"
-              title="Daily Activity"
-              description="Agent invocations per day."
+              title="Daily activity"
+              description="Agent invocations per day, last 7 days"
             />
             {stats.daily_trend.length === 0 ? (
               <div className="py-12 text-center text-sm text-muted-foreground">
@@ -335,25 +291,22 @@ export default function AdminUsagePage() {
 
           {/* Per-agent breakdown */}
           <div className="rounded-xl bg-card ring-1 ring-foreground/10">
-            <div className="px-4 py-3">
-              <h2 className="text-sm font-semibold">Per-Agent Breakdown</h2>
-            </div>
-            <Separator />
+            <h2 className="border-b px-4 py-3 text-sm font-semibold">Usage by agent</h2>
             {stats.per_agent.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                No agent usage data available.
+                No agent usage recorded yet.
               </div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableHead>Agent</TableHead>
+                    <TableHead className="pl-4">Agent</TableHead>
                     <TableHead className="text-right">Invocations</TableHead>
-                    <TableHead className="text-right">Tokens In</TableHead>
-                    <TableHead className="text-right">Tokens Out</TableHead>
-                    <TableHead className="text-right">Est. Cost</TableHead>
-                    <TableHead className="text-right">Avg Duration</TableHead>
-                    <TableHead className="w-[120px]">Volume</TableHead>
+                    <TableHead className="text-right">Tokens in</TableHead>
+                    <TableHead className="text-right">Tokens out</TableHead>
+                    <TableHead className="text-right">Est. cost</TableHead>
+                    <TableHead className="text-right">Avg. duration</TableHead>
+                    <TableHead className="w-[120px] pr-4">Volume</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -364,7 +317,7 @@ export default function AdminUsagePage() {
                     );
                     return stats.per_agent.map((agent) => (
                       <TableRow key={agent.agent_id}>
-                        <TableCell className="font-medium">
+                        <TableCell className="pl-4 font-medium">
                           {agent.agent_name}
                         </TableCell>
                         <TableCell className="text-right">
@@ -382,7 +335,7 @@ export default function AdminUsagePage() {
                         <TableCell className="text-right text-muted-foreground">
                           {formatDuration(agent.avg_duration_ms)}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="pr-4">
                           <InlineBar
                             value={agent.invocations}
                             max={maxInvocations}
@@ -396,53 +349,8 @@ export default function AdminUsagePage() {
             )}
           </div>
 
-          {/* Daily detail table */}
-          <div className="rounded-xl bg-card ring-1 ring-foreground/10">
-            <div className="px-4 py-3">
-              <h2 className="text-sm font-semibold">Daily Trend (Last 7 Days)</h2>
-            </div>
-            <Separator />
-            {stats.daily_trend.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                No trend data available.
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Invocations</TableHead>
-                    <TableHead className="text-right">Tokens In</TableHead>
-                    <TableHead className="text-right">Tokens Out</TableHead>
-                    <TableHead className="text-right">Total Tokens</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {stats.daily_trend.map((day) => (
-                    <TableRow key={day.date}>
-                      <TableCell className="font-medium">
-                        {formatDate(day.date)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatNumber(day.invocations)}
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">
-                        {formatNumber(day.tokens_in)}
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">
-                        {formatNumber(day.tokens_out)}
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">
-                        {formatNumber(day.tokens_in + day.tokens_out)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

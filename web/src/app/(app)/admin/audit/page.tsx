@@ -1,15 +1,19 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { Fragment, useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { asArray, asNumber } from "@/lib/guards";
 import { ErrorState } from "@/components/error-state";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
+import { AccessDenied } from "@/components/ui/access-denied";
+import { EmptyState } from "@/components/empty-state";
+import { formatDateTime, formatDuration, formatNumber } from "@/lib/format";
 import {
   Table,
   TableHeader,
@@ -22,7 +26,6 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
-  ShieldAlert,
   ScrollText,
   Wrench,
   Download,
@@ -31,6 +34,7 @@ import {
   X,
 } from "lucide-react";
 import { AGENTS } from "@/lib/agents";
+import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,33 +81,6 @@ const ASPIRE_BASE = "http://localhost:18888";
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function formatNumber(n: number | undefined | null): string {
-  if (n == null) return "0";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
-
-function formatDuration(ms: number | undefined | null): string {
-  if (ms == null) return "0ms";
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
-}
-
-function formatTimestamp(dateStr: string): string {
-  try {
-    return new Date(dateStr).toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  } catch {
-    return dateStr;
-  }
-}
 
 function exportJson(entries: AuditEntry[]) {
   const blob = new Blob([JSON.stringify(entries, null, 2)], {
@@ -212,12 +189,7 @@ function StepDetail({ step }: { step: AuditStep }) {
             {step.tool_name}
           </span>
           {step.status === "error" && (
-            <Badge
-              variant="outline"
-              className="border-red-200 bg-red-50 text-xs text-red-700"
-            >
-              error
-            </Badge>
+            <StatusBadge label="Error" tone="destructive" />
           )}
         </div>
         <span className="text-xs text-muted-foreground">
@@ -313,57 +285,30 @@ export default function AdminAuditPage() {
   if (authLoading) return null;
 
   if (!isAdmin) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-destructive/10">
-            <ShieldAlert className="size-8 text-destructive" />
-          </div>
-          <h2 className="mt-4 text-lg font-semibold">Access Denied</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Admin privileges required.
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDenied description="Admin privileges required." />;
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasFilters = !!(agentFilter || statusFilter || debouncedSearch);
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b bg-card">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-primary">
-                <ScrollText className="size-5 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">Agent Runs</h1>
-                <p className="text-sm text-muted-foreground">
-                  Full execution trace — every agent invocation with tool steps
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={entries.length === 0}
-              onClick={() => exportJson(entries)}
-              className="gap-1.5"
-            >
-              <Download className="size-3.5" />
-              Export JSON
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <PageContainer>
+      <PageHeader
+        icon={ScrollText}
+        title="Audit"
+        description="Every agent invocation with its tool steps"
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={entries.length === 0}
+            onClick={() => exportJson(entries)}
+          >
+            <Download data-icon="inline-start" />
+            Export JSON
+          </Button>
+        }
+      />
         <div className="rounded-xl bg-card ring-1 ring-foreground/10">
           {/* Filter bar */}
           <FilterBar
@@ -412,29 +357,27 @@ export default function AdminAuditPage() {
           )}
 
           {!loading && !error && entries.length === 0 && (
-            <div className="py-16 text-center">
-              <ScrollText className="mx-auto size-10 text-muted-foreground" />
-              <p className="mt-3 text-sm text-muted-foreground">
-                {hasFilters
-                  ? "No runs match the current filters."
-                  : "No runs recorded yet."}
-              </p>
-            </div>
+            <EmptyState
+              icon={ScrollText}
+              title={hasFilters ? "No matching runs" : "No runs recorded yet"}
+              description={hasFilters ? "No runs match the current filters." : "Agent invocations appear here as they happen."}
+              className="m-4 border-0"
+            />
           )}
 
           {!loading && !error && entries.length > 0 && (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[32px]" />
-                  <TableHead>Time</TableHead>
-                  <TableHead>Agent</TableHead>
-                  <TableHead>User</TableHead>
+                  <TableHead className="w-10" />
+                  <TableHead className="w-[150px]">Time</TableHead>
+                  <TableHead className="w-[120px]">Agent</TableHead>
+                  <TableHead className="w-[190px]">User</TableHead>
                   <TableHead>Prompt</TableHead>
-                  <TableHead className="text-right">Tokens</TableHead>
-                  <TableHead className="text-right">Duration</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Trace</TableHead>
+                  <TableHead className="w-[70px] text-right">Tokens</TableHead>
+                  <TableHead className="w-[80px] text-right">Duration</TableHead>
+                  <TableHead className="w-[72px]">Status</TableHead>
+                  <TableHead className="w-[72px] pr-4">Trace</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -443,111 +386,72 @@ export default function AdminAuditPage() {
                   const hasSteps = entry.steps?.length > 0;
 
                   return (
-                    <TableRow key={entry.id} className="group" aria-expanded={isExpanded}>
-                      <TableCell colSpan={9} className="p-0">
-                        {/* Main row */}
-                        <div
-                          className={`flex items-center text-sm ${hasSteps ? "cursor-pointer hover:bg-muted/30" : ""}`}
-                          onClick={() => hasSteps && toggleExpanded(entry.id)}
-                          onKeyDown={(e) => {
-                            if (hasSteps && e.key === "Enter")
-                              toggleExpanded(entry.id);
-                          }}
-                          role={hasSteps ? "button" : undefined}
-                          tabIndex={hasSteps ? 0 : undefined}
+                    <Fragment key={entry.id}>
+                      <TableRow
+                        aria-expanded={hasSteps ? isExpanded : undefined}
+                        className={cn("text-xs", hasSteps && "cursor-pointer")}
+                        onClick={() => hasSteps && toggleExpanded(entry.id)}
+                        onKeyDown={(e) => {
+                          if (hasSteps && e.key === "Enter") toggleExpanded(entry.id);
+                        }}
+                        tabIndex={hasSteps ? 0 : undefined}
+                      >
+                        <TableCell className="text-center">
+                          {hasSteps &&
+                            (isExpanded ? (
+                              <ChevronDown className="mx-auto size-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="mx-auto size-4 text-muted-foreground" />
+                            ))}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{formatDateTime(entry.created_at)}</TableCell>
+                        <TableCell className="truncate font-mono text-foreground/80">{entry.agent_name}</TableCell>
+                        <TableCell className="truncate text-muted-foreground">{entry.user_email ?? "-"}</TableCell>
+                        <TableCell className="truncate text-muted-foreground" title={entry.input_summary ?? undefined}>
+                          {entry.input_summary ?? "-"}
+                        </TableCell>
+                        <TableCell
+                          className="text-right tabular-nums text-muted-foreground"
+                          title={
+                            entry.cost_usd == null
+                              ? "Cost not captured"
+                              : `${entry.model ?? "no model call"} · ${formatNumber(entry.tokens_cached_in ?? 0)} cached in · est. $${entry.cost_usd.toFixed(4)}`
+                          }
                         >
-                          {/* Expand toggle */}
-                          <div className="flex w-10 shrink-0 items-center justify-center py-2.5">
-                            {hasSteps ? (
-                              isExpanded ? (
-                                <ChevronDown className="size-4 text-muted-foreground" />
-                              ) : (
-                                <ChevronRight className="size-4 text-muted-foreground" />
-                              )
-                            ) : (
-                              <span className="size-4" />
-                            )}
-                          </div>
+                          {formatNumber(entry.tokens_in + entry.tokens_out)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">
+                          {formatDuration(entry.duration_ms)}
+                        </TableCell>
+                        <TableCell>
+                          {entry.status === "success" ? (
+                            <StatusBadge label="OK" tone="success" />
+                          ) : (
+                            <StatusBadge label="Error" tone="destructive" />
+                          )}
+                        </TableCell>
+                        <TableCell className="pr-4">
+                          {entry.trace_id ? (
+                            <a
+                              href={`${ASPIRE_BASE}/traces/${entry.trace_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              title={`Open trace ${entry.trace_id} in Aspire`}
+                              className="inline-flex items-center gap-0.5 text-primary hover:underline"
+                            >
+                              <ExternalLink className="size-3" />
+                              Aspire
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
 
-                          {/* Time */}
-                          <div className="w-[135px] shrink-0 py-2.5 text-xs text-muted-foreground">
-                            {formatTimestamp(entry.created_at)}
-                          </div>
-
-                          {/* Agent */}
-                          <div className="w-[155px] shrink-0 py-2.5 font-mono text-xs text-foreground/80">
-                            {entry.agent_name}
-                          </div>
-
-                          {/* User */}
-                          <div className="w-[155px] shrink-0 truncate py-2.5 text-xs text-muted-foreground">
-                            {entry.user_email ?? "—"}
-                          </div>
-
-                          {/* Prompt */}
-                          <div className="min-w-0 flex-1 truncate py-2.5 pr-3 text-xs text-muted-foreground">
-                            {entry.input_summary ?? "—"}
-                          </div>
-
-                          {/* Tokens */}
-                          <div
-                            className="w-[80px] shrink-0 py-2.5 text-right text-xs text-muted-foreground"
-                            title={
-                              entry.cost_usd == null
-                                ? "Cost not captured"
-                                : `${entry.model ?? "no model call"} · ${formatNumber(entry.tokens_cached_in ?? 0)} cached in · est. $${entry.cost_usd.toFixed(4)}`
-                            }
-                          >
-                            {formatNumber(entry.tokens_in + entry.tokens_out)}
-                          </div>
-
-                          {/* Duration */}
-                          <div className="w-[75px] shrink-0 py-2.5 text-right text-xs text-muted-foreground">
-                            {formatDuration(entry.duration_ms)}
-                          </div>
-
-                          {/* Status */}
-                          <div className="w-[70px] shrink-0 py-2.5">
-                            {entry.status === "success" ? (
-                              <Badge
-                                variant="outline"
-                                className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400"
-                              >
-                                OK
-                              </Badge>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className="border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400"
-                              >
-                                Error
-                              </Badge>
-                            )}
-                          </div>
-
-                          {/* Trace link */}
-                          <div className="w-[56px] shrink-0 py-2.5 pr-3">
-                            {entry.trace_id ? (
-                              <a
-                                href={`${ASPIRE_BASE}/traces/${entry.trace_id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                title={`Open trace ${entry.trace_id} in Aspire`}
-                                className="inline-flex items-center gap-0.5 text-xs text-primary hover:underline"
-                              >
-                                <ExternalLink className="size-3" />
-                                Aspire
-                              </a>
-                            ) : (
-                              <span className="text-xs text-muted-foreground/40">—</span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Expanded steps */}
-                        {isExpanded && hasSteps && (
-                          <div className="border-t border-border bg-muted/40 px-4 pb-3 pt-2">
+                      {isExpanded && hasSteps && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={9} className="whitespace-normal bg-muted/40 px-4 pb-3 pt-2">
                             <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                               <Wrench className="size-3" />
                               Tool steps ({entry.steps.length})
@@ -562,10 +466,10 @@ export default function AdminAuditPage() {
                                 {entry.error_message}
                               </p>
                             )}
-                          </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
                   );
                 })}
               </TableBody>
@@ -603,7 +507,6 @@ export default function AdminAuditPage() {
             </>
           )}
         </div>
-      </div>
-    </div>
+    </PageContainer>
   );
 }

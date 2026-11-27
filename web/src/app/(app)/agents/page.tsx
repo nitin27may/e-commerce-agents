@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ArrowRight, Bot } from "lucide-react";
 import { AGENTS } from "@/lib/agents";
 import { pageEnter, listStagger, listItem, instant } from "@/lib/motion";
-import { SectionHeader } from "@/components/ui/section-header";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
 import { StaffOnly } from "@/components/staff-only";
+import { specialistSummary, toolCount } from "@/components/agents/agent-copy";
 
 export default function AgentsIndexPage() {
   return (
@@ -19,73 +19,53 @@ export default function AgentsIndexPage() {
 
 function AgentsIndex() {
   const reduce = useReducedMotion();
+  const specialists = AGENTS.filter((a) => a.slug !== "orchestrator").length;
 
   return (
-    <motion.div
-      variants={reduce ? instant : pageEnter}
-      initial="hidden"
-      animate="visible"
-      className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8"
-    >
-      <SectionHeader
-        as="h1"
-        eyebrow="Multi-agent platform"
-        title="Specialist Agents"
-      />
-      <p className="max-w-2xl text-sm text-muted-foreground">
-        Six specialist agents collaborate to handle every part of the shopping
-        experience. Each has a dedicated tool set and is called by the
-        Orchestrator via the A2A protocol.
-      </p>
+    <motion.div variants={reduce ? instant : pageEnter} initial="hidden" animate="visible">
+      <PageContainer>
+        <PageHeader icon={Bot} title="Agents" description={specialistSummary(specialists)} />
 
-      <motion.div
-        variants={reduce ? undefined : listStagger}
-        initial={reduce ? undefined : "hidden"}
-        animate={reduce ? undefined : "visible"}
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-      >
-        {AGENTS.map((agent) => {
-          const Icon = agent.icon;
-          return (
-            <motion.div key={agent.slug} variants={reduce ? undefined : listItem}>
-              <Link
-                href={`/agents/${agent.slug}`}
-                className="group/card flex h-full flex-col rounded-xl bg-card p-5 ring-1 ring-foreground/10 transition-shadow hover:shadow-md"
-              >
-                <div className="flex items-start gap-4">
-                  <div
-                    className={cn(
-                      "flex size-11 shrink-0 items-center justify-center rounded-xl transition-transform group-hover/card:scale-105",
-                      agent.accentBg,
-                    )}
-                  >
-                    <Icon className={cn("size-5", agent.accentText)} aria-hidden />
+        <motion.div
+          variants={reduce ? undefined : listStagger}
+          initial={reduce ? undefined : "hidden"}
+          animate={reduce ? undefined : "visible"}
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        >
+          {AGENTS.map((agent) => {
+            const Icon = agent.icon;
+            return (
+              <motion.div key={agent.slug} variants={reduce ? undefined : listItem}>
+                <Link
+                  href={`/agents/${agent.slug}`}
+                  className="group/card flex h-full flex-col rounded-xl bg-card p-5 ring-1 ring-foreground/10 transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Icon className="size-5" aria-hidden />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold">{agent.name}</p>
+                      <p className="text-xs text-muted-foreground">{agent.role}</p>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold">{agent.name}</p>
-                    <p className={cn("text-xs font-medium", agent.accentText)}>
-                      {agent.role}
-                    </p>
+
+                  <p className="mt-3 line-clamp-3 flex-1 text-sm leading-relaxed text-muted-foreground">
+                    {agent.tagline}
+                  </p>
+
+                  <div className="mt-4 flex items-center justify-between border-t pt-3">
+                    <span className="text-xs text-muted-foreground">{toolCount(agent.tools.length)}</span>
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+                      View details <ArrowRight className="size-3 transition-transform group-hover/card:translate-x-0.5" />
+                    </span>
                   </div>
-                </div>
-
-                <p className="mt-3 flex-1 text-xs leading-relaxed text-muted-foreground line-clamp-3">
-                  {agent.tagline}
-                </p>
-
-                <div className="mt-4 flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    {agent.tools.length} tools
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-primary opacity-0 transition-opacity group-hover/card:opacity-100">
-                    View details <ArrowRight className="size-3" />
-                  </span>
-                </div>
-              </Link>
-            </motion.div>
-          );
-        })}
-      </motion.div>
+                </Link>
+              </motion.div>
+            );
+          })}
+        </motion.div>
+      </PageContainer>
     </motion.div>
   );
 }
