@@ -605,3 +605,17 @@ def test_handoff_tool_order_does_not_reach_the_key() -> None:
     # An ordinary tool keeps its position, so other fixtures' keys do not move.
     assert key(["z_tool", "a_tool"]) != key(["a_tool", "z_tool"])
     assert key(["x", "handoff_to_b", "handoff_to_a"]) != key(["handoff_to_a", "handoff_to_b", "x"])
+
+
+def test_a_parked_calls_short_approval_ref_does_not_change_the_key():
+    """A gated call that parks for staff replies "(ref: <first 8 hex of a random id>)" (shared/hitl.py). Each run
+    mints a new id, so before this was scrubbed no recording of a parked action could ever replay."""
+    reply = "I have asked a team member to approve a return for order {oid} (ref: {ref}). Nothing has changed yet."
+    a = _canonical([_tool_msg(reply.format(oid="e9418342-8843-4b1b-ab01-e63fe2e8b8f0", ref="12e353ca"))])
+    b = _canonical([_tool_msg(reply.format(oid="bf88ec9f-1137-4de9-b0ef-d2a50a29513d", ref="ced10b2d"))])
+
+    assert _request_hash(a) == _request_hash(b)
+    # Only the ref form is blurred: other short hex in a tool result still keys the request.
+    assert _request_hash(_canonical([_tool_msg("code 12e353ca")])) != _request_hash(
+        _canonical([_tool_msg("code ced10b2d")])
+    )

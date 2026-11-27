@@ -30,6 +30,21 @@
       ]
     },
     {
+      "id": "media-hero-add-to-cart",
+      "source": "media",
+      "user": "tour@example.com",
+      "mode": "tool",
+      "new_conversation": false,
+      "prompt": "Add the Sony WH-1000XM5 to my cart.",
+      "fixtures": [
+        "371a9dfd27c0e68b",
+        "6a35e792100a0df2",
+        "9fbc08afd1d6c4f8",
+        "b439337794cdaecd",
+        "c8f978f4b140f6da"
+      ]
+    },
+    {
       "id": "order-status",
       "source": "tour",
       "user": "tour@example.com",
@@ -154,10 +169,10 @@
       "new_conversation": true,
       "prompt": "Where's my latest order?",
       "fixtures": [
-        "12c9c903f3f691c9",
         "352d93302e0b2432",
-        "71cdaca1ee9b5b0a",
-        "95fab6a87130270f"
+        "5929faa7a80114d9",
+        "6a6bd9bd6d4d651a",
+        "f9fd48ff980ae3af"
       ]
     },
     {
@@ -173,6 +188,32 @@
         "3c8e1b0a64ab928b",
         "acb6e19b14c4ab0d",
         "f46b6f44ecce755a"
+      ]
+    },
+    {
+      "id": "media-return-reason",
+      "source": "media",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": false,
+      "prompt": "The cooler stopped working properly. Please refund it to my original payment method.",
+      "fixtures": [
+        "61be4e3aa2b62069",
+        "791cade7422644e0",
+        "f65cdf82c588fb36"
+      ]
+    },
+    {
+      "id": "media-return-confirm",
+      "source": "media",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": false,
+      "prompt": "Yes, please go ahead.",
+      "fixtures": [
+        "336ffd41f253c04d",
+        "9bb13df92d64c637",
+        "c0aa2784f0f48f1b"
       ]
     },
     {
@@ -292,7 +333,7 @@
       "user": "alice.johnson@gmail.com",
       "mode": "workflow:pre-purchase",
       "new_conversation": true,
-      "prompt": "I'm considering the Allbirds Wool Runners \u2014 should I buy them?",
+      "prompt": "I'm considering the Allbirds Wool Runners — should I buy them?",
       "fixtures": []
     },
     {
@@ -536,6 +577,48 @@
         "9282770240bd89db",
         "3efa67239f76506c",
         "d9b11d25fdd747cb"
+      ]
+    },
+    {
+      "id": "media-deal-and-stock",
+      "source": "media",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Is the Sony WH-1000XM5 a good deal right now, and is it in stock?",
+      "fixtures": [
+        "08fb7894f4840fc6",
+        "2c5c43e8d72ae9d7",
+        "436583310c00c7bc",
+        "474e0075bb1fd485",
+        "4cb3161e84a2303e",
+        "74123335547a422c",
+        "752c7d87e3989fcc",
+        "8892694f29f77fd5",
+        "aac694f520fe8064",
+        "ac7623b42cbea013",
+        "d851241a09afcf08",
+        "e11fcc3d663e3450",
+        "eada112dc36d1456"
+      ]
+    },
+    {
+      "id": "media-lab-deal-and-stock",
+      "source": "media",
+      "user": "admin.demo@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Is the Sony WH-1000XM5 a good deal right now, and is it in stock?",
+      "fixtures": [
+        "08371eab500592dc",
+        "09beb3048df76295",
+        "25d3e9f36b13f666",
+        "2b1a23c607f92589",
+        "3c7c3c7e51d3a73a",
+        "a42dadaf7ad4da9a",
+        "ad1f92e244a6c09c",
+        "b9b2b822cb20e0e8",
+        "d9b5e4b40d3bb1a8"
       ]
     }
   ]

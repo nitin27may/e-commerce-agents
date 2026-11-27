@@ -107,6 +107,10 @@ target is listed under "Known limits".
 
 ### Fixed
 
+- **A staff-approved return now gets a label and a refund amount (both stacks).** The approved-action executor (`shared/hitl.py`, `HitlActionExecutor.cs`) inserted the return without `return_label_url` or `refund_amount`. Every return over the approval threshold therefore ended with nothing for the customer to download, print or ship. It now issues the same label token as a directly initiated return, records the order total, and returns both. Regression test in `tests/test_idempotency.py`.
+- **A parked gated call can be replayed.** The reply to a call that parks for staff cites its approval as "(ref: <first 8 hex of a random id>)". The replay hash scrubbed full UUIDs but not this short form, so no recording of a parked action could ever replay. `_normalize_for_hash` now scrubs it. No committed fixture changes key except the one new recording that contains it.
+- **New demo recordings.** Five turns were recorded once against gpt-4.1 on a fresh database (`source: media` in `demo/fixtures/manifest.json`): adding the XM5 to the cart after the tour's two turns; Alice's return through reason, confirmation and staff approval; a two-specialist "good deal, and in stock?" question for a shopper and for the Lab. "Where's my latest order?" was re-recorded because its answer carried a stale order date. All 44 recorded turns replay with no miss on a fresh database in reverse order.
+
 **Security and correctness**
 
 - **`draft_seller_response` is scoped to the caller's own products (#314, both stacks).** A seller could draft a response to a review of any seller's product. It now answers the same `Review not found: <id>` for another seller's review as for a missing one; an admin may draft for any review and every other role keeps the role denial. No tool schema or prompt changed, so no fixture moved.
