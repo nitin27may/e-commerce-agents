@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { ChatPricingCard } from "./pricing-card";
 
 describe("ChatPricingCard", () => {
@@ -18,11 +18,11 @@ describe("ChatPricingCard", () => {
         }}
       />
     );
-    expect(screen.getByText("Savings Breakdown")).toBeInTheDocument();
+    expect(screen.getByText("Your savings")).toBeInTheDocument();
     expect(screen.getByText("Coupon SAVE10")).toBeInTheDocument();
     expect(screen.getByText("Gold loyalty discount")).toBeInTheDocument();
     expect(screen.getByText("$304.48")).toBeInTheDocument();
-    expect(screen.getByText(/saved 13%/)).toBeInTheDocument();
+    expect(screen.getByText(/you save 13%/)).toBeInTheDocument();
   });
 
   it("renders active deals from get_active_deals's fields with no waterfall", () => {
@@ -34,10 +34,36 @@ describe("ChatPricingCard", () => {
         }}
       />
     );
-    expect(screen.getByText("Deals & Promotions")).toBeInTheDocument();
+    expect(screen.getByText("Deals and promotions")).toBeInTheDocument();
     expect(screen.getByText("WELCOME15")).toBeInTheDocument();
     expect(screen.getByText("Summer Sale")).toBeInTheDocument();
-    expect(screen.queryByText("Savings Breakdown")).not.toBeInTheDocument();
+    expect(screen.getByText("Flash sale")).toBeInTheDocument();
+    expect(screen.getByText("Sep 1, 2026")).toBeInTheDocument();
+    expect(screen.queryByText("Your savings")).not.toBeInTheDocument();
+  });
+
+  it("drops columns no row has a value for, reads a promotion's percentage from its rules, and lets details wrap", () => {
+    render(
+      <ChatPricingCard
+        data={{
+          coupons: [{ code: "TECHSAVE", description: "15% off Electronics (min $100, max $75)" }],
+          promotions: [{ name: "Tech Bundle Deal", type: "bundle", rules: { discount_pct: 10 } }],
+        }}
+      />
+    );
+    // No coupon has a discount value or end date, and no promotion an end date.
+    expect(screen.queryByText("—")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ends")).not.toBeInTheDocument();
+    expect(screen.getByText("10%")).toBeInTheDocument();
+    expect(screen.getByText("Bundle")).toBeInTheDocument();
+    expect(screen.getByText(/15% off Electronics/).closest("td")?.className).toContain("whitespace-normal");
+  });
+
+  it("offers Apply per coupon, which asks the assistant to apply it", async () => {
+    const onAction = vi.fn();
+    render(<ChatPricingCard data={{ coupons: [{ code: "WELCOME10", description: "10% off" }] }} onAction={onAction} />);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(onAction).toHaveBeenCalledWith("Apply coupon WELCOME10 to my cart");
   });
 
   it("renders nothing when the fence is effectively empty (Phase 8.4 Stage 4c live-testing find)", () => {
