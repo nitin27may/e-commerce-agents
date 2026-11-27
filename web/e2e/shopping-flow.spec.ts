@@ -203,19 +203,10 @@ test.describe("Chat Experience", () => {
 // 5. MARKETPLACE
 // ============================================================
 test.describe("Agent catalog", () => {
-  test("should see agent catalog", async ({ page }) => {
+  test("is a staff page: a customer is refused", async ({ page }) => {
     await login(page, "alice.johnson@gmail.com", "customer123");
-    // /marketplace was removed; the catalog is at /agents. The old path 404s, and
-    // the assertion below was permissive enough (`hasAgents || hasMarketplace`,
-    // both from .catch(() => false)) that it reported a plain failure rather than
-    // "that page does not exist".
     await page.goto("/agents");
-    await page.waitForLoadState("networkidle");
-    await page.screenshot({ path: "e2e/screenshots/agent-catalog.png" });
-
-    await expect(
-      page.getByText(/customer support|inventory|pricing|product|order|review/i).first(),
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { name: "Access Denied" })).toBeVisible({ timeout: 10000 });
   });
 });
 

@@ -82,7 +82,7 @@ test.describe("authenticated shell", () => {
       ["admin returns", "/admin/returns", "admin"],
       ["seller proposals", "/seller/proposals", "seller"],
       ["chat", "/chat", "customer"],
-      ["runs", "/runs", "customer"],
+      ["runs", "/runs", "admin"],
       ["admin approvals", "/admin/approvals", "admin"],
     ] as const) {
       test(`${name} (${theme}) has no serious or critical violations`, async ({ page }) => {
@@ -99,7 +99,7 @@ test.describe("authenticated shell", () => {
   }
 
   test("runs shows the Needs approval badge for a paused return", async ({ page }) => {
-    await seedAuth(page);
+    await seedAuth(page, "admin");
     await mockApi(page);
     await page.goto("/runs");
     await expect(page.getByText("Needs approval")).toBeVisible();

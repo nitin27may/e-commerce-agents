@@ -7,8 +7,17 @@ import { cn } from "@/lib/utils";
 import { AGENTS } from "@/lib/agents";
 import { pageEnter, listStagger, listItem, instant } from "@/lib/motion";
 import { SectionHeader } from "@/components/ui/section-header";
+import { StaffOnly } from "@/components/staff-only";
 
 export default function AgentsIndexPage() {
+  return (
+    <StaffOnly>
+      <AgentsIndex />
+    </StaffOnly>
+  );
+}
+
+function AgentsIndex() {
   const reduce = useReducedMotion();
 
   return (

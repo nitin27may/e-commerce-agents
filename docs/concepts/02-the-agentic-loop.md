@@ -66,7 +66,7 @@ async for update in stream:
 
 Every tool call the loop makes along the way is recorded by `StepRecorderMiddleware`
 ([`agents/python/shared/agent_observability.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/agent_observability.py)) into that request's step list. The proof that the
-loop actually ran more than once for a given query is visible in the browser: open the chat UI,
+loop actually ran more than once for a given query is visible in the browser: open the staff Lab (`/lab`, the chat with its machinery shown),
 ask something that needs two facts (like the stock-and-shipping example above), and watch
 [`web/src/components/chat/agent-timeline.tsx`](https://github.com/nitin27may/e-commerce-agents/blob/main/web/src/components/chat/agent-timeline.tsx) render one row per tool call — `search_products`,
 then `check_stock`, then the final answer — each expandable to show exactly what arguments went

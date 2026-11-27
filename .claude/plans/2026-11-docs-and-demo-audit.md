@@ -70,3 +70,81 @@ These need the owner's call:
 3. **Shorten the README.** At 366 lines, the Codespaces paragraph (about 10 lines) and the Generative UI paragraph belong in the quick start and demo guide. The 100-line Mermaid block could become the rendered `docs/architecture.png` with a link to the diagram source.
 4. **Put evals on the front page.** The eval harness, the red-team set and the keyless replay gate are a real differentiator, but the README gives them one table cell. Add a short "Quality you can check" section: one command (`scripts/replay-evals.sh`), a terminal clip, and a link to the scorecard.
 5. **`docs/index.md` "Where the project is"** lists "New in 1.4". Update it at the next release.
+
+## 2. Demo plan (decided 2026-11-27)
+
+### Rule: no internals in the chat, for anyone
+
+The storefront chat shows answers, cards and plain status lines to every role. Graphs, node and tool names, the agent-activity timeline, grounding badges, panelist tags, the mode switcher and Compare all leave the chat. The multi-agent story moves into two places. One is **captions and a small diagram beside each clip**, which name the agents that collaborated. The other is the **developer tools** (Aspire traces, MAF DevUI, and the staff-only /runs page), recorded as separate under-the-hood clips.
+
+### Clips: real journeys, each with its agent story
+
+| # | Clip | User | What the viewer sees | Agents behind it (caption + diagram, not on screen) | Fixtures |
+|---|---|---|---|---|---|
+| 1 | Hero: shop, ask, buy | customer | search, product cards, "which has the best reviews", add to cart, checkout | orchestrator, product-discovery, review-sentiment, pricing (coupon), inventory | partly recorded; checkout via chat needs new ones |
+| 2 | Where is my order | customer | "where is my sweater order", tracking card with ETA | orchestrator, order-management, inventory-fulfillment | recorded |
+| 3 | Return with approval | customer, then support | "return my Dyson", a plain "a person will review this" card; support approves in the inbox; the customer sees the refund | return-and-replace workflow, policy gate, approvals, outbox worker | workflow mode: no model needed |
+| 4 | Pre-purchase advice | customer | "is it a good time to buy the XM5", one combined answer (reviews, stock, price trend, shipping) | parallel fan-out to four specialists, merged | workflow mode: no model needed |
+| 5 | Seller day | seller | seller dashboard, a restock or markdown proposal, approve it | merchant-ops, proposals, approvals | needs checking |
+| 6 | Under the hood | developer | the same "best reviews" turn as an Aspire trace: orchestrator, A2A calls, tool spans, tokens and cost | all, as spans | recorded |
+| 7 | Evals | developer | keyless quality eval against its baseline, then the red-team suite | eval harness | done (terminal) |
+| 8 | Azure in one command | developer | `azure-up.sh` progress and the provisioned resource list, redacted | azd, Bicep, Container Apps | owner records |
+
+Return label download and printing does not exist in the product today, so it cannot be a clip until it is built.
+
+### Handoff to the article session
+
+Every clip ships with an entry in `docs/media/manifest.json`: id, title, one-paragraph caption, the agents involved, a Mermaid snippet of the flow, duration, alt text, and paths to the GIF (1280 px), the MP4 (2560 px) and a still. The article session takes assets and words from that file, without re-deriving them.
+
+### Redaction (Azure and evals)
+
+- **Deploy with fixed names.** Record with `--env eca-demo`, so resource names are generic.
+- **Mask terminal output.** A `scripts/demo/redact.sh` filter in the tape pipeline masks GUIDs (subscription, tenant, object ids), email addresses, public IPs, `*.azurecontainerapps.io` hostnames and the subscription name.
+- **Check before committing.** A frame OCR pass (tesseract) samples every recorded clip and fails on any GUID, email, IP, or a configured list of account words.
+- **Portal screenshots.** These are taken by hand, then blurred with the same check run on them.
+
+## Working order (revised 2026-11-27)
+
+Recording before the UI is settled means recording twice, so the order is:
+
+1. Docs audit: done (commit 75b431ab).
+2. Product rules checkpoint: no internals in the chat for any role, staff-only /runs and /agents, customer copy, the fixes found so far.
+3. UI and generative-UI review by an independent reviewer (Fable): every screen and card type, the card-selection mechanism, palette, buttons, consistency. Findings only.
+4. One consolidated fix pass, verified by tests and a fresh screenshot sweep.
+5. Demo content: record any missing journey answers once with the local Azure OpenAI key.
+6. Recording: app clips, under-the-hood (Aspire), evals, Azure (redacted), at the locked quality settings.
+7. Docs and landing README with the media, `docs/media/manifest.json`, handoff to the article session.
+8. Fable proofread, new-developer read-through, final verification, push.
+
+## 3. Evaluation showcase
+
+`scripts/demo/tapes/evals.tape` (vhs) records two keyless runs: a specialist scored against its committed baseline, and the red-team suite. Recording it found two defects, both fixed:
+
+- **Absolute path in reports.** "Compared against" printed the absolute baseline path, which published the reader's home directory in any pasted report or recording. It is now relative to the working directory.
+- **Missing space.** The safety report printed "Injection resisted:8".
+
+## 4. Product rules and UI fixes (checkpoint before the review)
+
+| Area | Change |
+|---|---|
+| Chat, every role | Agent-name badges, the agent-activity timeline, the grounding badge, the workflow graph, the orchestration mode switcher and the Compare dialog are gone from `/chat`. The status line names what is being done for the shopper ("Checking stock and delivery..."), not an agent. All of it moves to a staff-only Lab (`/lab`), the same `ChatView` with `devView`, because the course teaches against it |
+| Guest assistant (/shop/assistant) | Same removals |
+| /runs, /agents | Staff only (support, admin): moved to the Admin nav group, and the page itself refuses others (`components/staff-only.tsx`) |
+| Customer copy | Home, shop, login, chat empty state and the scenario cards no longer talk about specialists, agents or orchestration. Two fake home stat tiles ("6 Specialist Agents", a hard-coded "~1.2s" response time) and an "Agent activity coming soon" card are removed |
+| Tour chips | "Handoff mesh - track my order", "Pre-purchase research" and "Round-table debate" are relabelled as shopper questions |
+| Pre-purchase answer | Was one pipe-joined line, and "could not check: price_history" leaked a state key. It is now a markdown list with readable names, on both stacks |
+| Answer markdown | The `prose` classes never applied (`@tailwindcss/typography` was never installed), so lists had no bullets and headings, tables and code were unstyled. Elements are now styled explicitly |
+| /runs | A paused run showed a green check beside "Needs approval"; it now shows a pause icon |
+| Sidebar | The footer (user name, sign out) was clipped on short screens: the nav scroll area needed `min-h-0` |
+| Chat empty state | The quick prompts appeared twice (list and composer) |
+| Parity e2e | Mode, graph and compare checks now run against the API, which both stacks still serve |
+| Obsolete | `scripts/record-demo.sh`, `readme-gif.spec.ts` and `demo-recording.spec.ts` are replaced by `scripts/record-media.sh` and `demo-media.spec.ts`. `chat-new-after-compare.spec.ts` now runs against the Lab |
+| Duplicate answer | One answer rendered twice: two stream handlers each appended the assistant message, coordinating through a flag set inside a state updater. One upsert now checks inside the updater |
+
+Verified: answer text across all 316 recorded fixtures names no tool and no agent. Role scoping is enforced server side: the route matrix, role-aware prompts, guardrails, ownership checks, and the rule that permissions come only from the authenticated role.
+
+### Open, for the review and later steps
+
+- **Stale sentiment recording.** The review-sentiment chart prompt no longer replays: its tool buckets by month relative to today, so the recording went stale. It needs re-recording (step 5).
+- **Hard-coded Aspire link.** The /runs "Aspire" link points at `http://localhost:18888` even on a deployed stack.
+- **Landing page wording.** The public landing page (`/`) still says "Meet the agents". It is the project's pitch page, not the store, so this is the owner's call.

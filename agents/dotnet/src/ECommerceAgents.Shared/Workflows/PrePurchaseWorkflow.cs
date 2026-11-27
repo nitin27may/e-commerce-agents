@@ -293,6 +293,7 @@ public sealed class PrePurchaseWorkflow
 
         return parts.Count == 0
             ? "Insufficient data for recommendation"
-            : string.Join(" | ", parts);
+            // One line per signal, as a markdown list, matching the Python stack.
+            : string.Join("\n", parts.Select(p => $"- {p}"));
     }
 }

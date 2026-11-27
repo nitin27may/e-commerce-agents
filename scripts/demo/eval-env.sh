@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by scripts/demo/tapes/evals.tape before the camera rolls: the keyless replay setup that
 # scripts/replay-evals.sh uses, with the database and Redis of `docker compose up -d db redis`.
 # Override DATABASE_URL / REDIS_URL in the calling shell if yours listen elsewhere.

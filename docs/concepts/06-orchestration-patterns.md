@@ -42,7 +42,8 @@ MODES: dict[str, OrchestrationMode] = {
 Every mode implements the same `run()` contract ([`orchestrator/modes/base.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/modes/base.py)), so the web UI, the
 `/api/chat` route, and the eval harness can all drive any of them identically — see
 [`web/src/components/chat/mode-switcher.tsx`](https://github.com/nitin27may/e-commerce-agents/blob/main/web/src/components/chat/mode-switcher.tsx) and [`mode-comparison.tsx`](https://github.com/nitin27may/e-commerce-agents/blob/main/web/src/components/chat/mode-comparison.tsx) for the UI that lets you run
-one prompt through several modes side by side, with real latency and token numbers.
+one prompt through several modes side by side, with real latency and token numbers. Both live in the staff
+Lab (`/lab`); the storefront chat runs the default mode and shows shoppers none of this.
 
 ### `tool` — LLM-driven routing (the default)
 

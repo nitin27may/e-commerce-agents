@@ -197,7 +197,7 @@ because that is the only way to tell a round-table from a fan-out.
 
 ## How this shows up in the capstone
 
-In the capstone, a user picks **group-chat** in the chat UI's mode switcher and gets a
+In the capstone, a developer picks **group-chat** in the Lab's mode switcher (`/lab`, staff only) and gets a
 verdict that a value panelist and a quality panelist have argued over first. The class
 behind it is the one this chapter runs: `GroupChatWorkflow`
 (`agents/python/workflows/group_chat.py`). Both

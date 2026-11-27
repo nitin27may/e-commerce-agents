@@ -46,7 +46,7 @@ export default function ShopHome() {
           </h1>
           <p className="mx-auto mt-4 max-w-xl text-pretty text-muted-foreground sm:text-lg">
             Browse the catalog or just describe what you&apos;re looking for —
-            our specialist agents search, compare, and recommend in seconds.
+            the assistant searches, compares, and recommends in seconds.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
@@ -76,8 +76,8 @@ export default function ShopHome() {
             title="Try a scenario"
           />
           <p className="mb-6 max-w-xl text-sm text-muted-foreground">
-            Each prompt exercises a different set of specialist agents. Click any
-            card to open the AI assistant with the prompt prefilled.
+            Ask in your own words. Click a card to open the assistant with the
+            question filled in.
           </p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {DEMO_SCENARIOS.map((s) => (

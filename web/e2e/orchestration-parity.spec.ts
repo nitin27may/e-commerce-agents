@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { BACKEND, skipIfKnownGap } from "./parity-gaps";
+import { staffPassword } from "./credentials";
 
 /**
  * The parity gate: the orchestration-showcase surfaces, asserted the same way
@@ -24,6 +25,8 @@ import { BACKEND, skipIfKnownGap } from "./parity-gaps";
  */
 
 const CUSTOMER = { email: "alice.johnson@gmail.com", password: "customer123" };
+// /runs is a staff page (components/staff-only.tsx).
+const ADMIN = { email: "admin.demo@gmail.com", password: staffPassword("admin123") };
 
 /**
  * The orchestrator the API-level assertions talk to. Defaults to the port the
@@ -34,12 +37,12 @@ const CUSTOMER = { email: "alice.johnson@gmail.com", password: "customer123" };
  */
 const ORCH_URL = process.env.ORCH_URL ?? "http://localhost:8080";
 
-async function login(page: Page) {
+async function login(page: Page, user: { email: string; password: string } = CUSTOMER) {
   await page.goto("/login");
-  await page.fill('input[type="email"]', CUSTOMER.email);
-  await page.fill('input[type="password"]', CUSTOMER.password);
+  await page.fill('input[type="email"]', user.email);
+  await page.fill('input[type="password"]', user.password);
   await page.click('button[type="submit"]');
-  await page.waitForURL(/\/(chat|products)/, { timeout: 15000 });
+  await page.waitForURL(/\/(chat|products|home|admin)/, { timeout: 15000 });
   await assertFrontendTalksToOrchUrl(page);
 }
 
@@ -107,106 +110,71 @@ test.describe(`orchestration parity [${BACKEND}]`, () => {
   // failure looks like a missing element rather than a slow one.
   test.describe.configure({ mode: "serial", timeout: 180_000 });
 
-  test("mode switcher offers more than one orchestration mode", async ({ page }) => {
-    skipIfKnownGap("mode switcher offers more than one orchestration mode");
+  // The orchestration modes are a backend capability. The storefront chat offers no mode switcher, graph or
+  // Compare dialog (no role sees agent internals there), so these four check the API both stacks serve; the
+  // evals (`--mode`) and DevUI drive the same endpoints.
+
+  async function token(page: Page) {
+    return page.evaluate(() => localStorage.getItem("ecommerce_access_token") ?? "");
+  }
+
+  test("the backend offers more than one orchestration mode", async ({ page }) => {
+    skipIfKnownGap("the backend offers more than one orchestration mode");
     await login(page);
-    await page.goto("/chat");
-
-    // The switcher renders only once GET /api/orchestration/modes resolves
-    // with a non-empty list, so its presence *is* the assertion.
-    const switcher = page.locator('[aria-label="Orchestration mode"]').first();
-    await expect(switcher, "the mode switcher must render, not silently return null").toBeVisible({
-      timeout: 15000,
+    const res = await page.request.get(`${ORCH_URL}/api/orchestration/modes`, {
+      headers: { Authorization: `Bearer ${await token(page)}` },
     });
-
-    await switcher.click();
-
-    // base-ui renders select items as plain divs with no role or data-slot,
-    // so they are only addressable by text inside the popup.
-    const menu = page.locator('[data-slot="select-content"]');
-    await expect(menu, "the mode list must open").toBeVisible({ timeout: 10000 });
-    await expect(menu.getByText("Tool Router", { exact: false })).toBeVisible();
-    await expect(
-      menu.getByText(/Pre-Purchase|Handoff|Group Chat/i).first(),
-      "more than the default tool router must be offered",
-    ).toBeVisible();
+    expect(res.ok(), "GET /api/orchestration/modes").toBe(true);
+    const names = ((await res.json()) as { name: string }[]).map((m) => m.name);
+    expect(names, "the tool router is offered").toContain("tool");
+    expect(names.some((n) => n.startsWith("workflow:")), "a workflow mode is offered").toBe(true);
   });
 
   test("selecting a workflow mode is honoured, not silently downgraded", async ({ page }) => {
     skipIfKnownGap("selecting a workflow mode is honoured, not silently downgraded");
     await login(page);
-    await page.goto("/chat");
-
-    const switcher = page.locator('[aria-label="Orchestration mode"]').first();
-    await switcher.click();
-    await page.locator('[data-slot="select-content"]').getByText(/Pre-Purchase/i).first().click();
-
-    await sendMessageAndWaitForTurn(page, "Should I buy the Sony WH-1000XM5?");
-
-    // The UI surfaces the executed mode by rendering OrchestrationGraph, which
-    // is gated on msg.mode being set. Asserting on a node label unique to the
-    // pre-purchase graph is what separates "honoured" from "silently
-    // downgraded" — a backend that drops the field still answers normally in
-    // tool mode, which otherwise looks correct.
-    const graph = page.locator('svg[id^="orchestration-graph"]').first();
-    await expect(graph, "a graph must render for a workflow mode").toBeVisible({ timeout: 20000 });
-    await expect(
-      graph.getByText(/reviews|stock|price|synthes/i).first(),
-      "the graph must be the pre-purchase graph, not the tool router's",
-    ).toBeVisible({ timeout: 10000 });
-  });
-
-  test("the orchestration graph renders for a workflow mode", async ({ page }) => {
-    skipIfKnownGap("the orchestration graph renders for a workflow mode");
-    await login(page);
-    await page.goto("/chat");
-
-    const switcher = page.locator('[aria-label="Orchestration mode"]').first();
-    await switcher.click();
-    await page.locator('[data-slot="select-content"]').getByText(/Pre-Purchase/i).first().click();
-
-    await sendMessageAndWaitForTurn(page, "Should I buy the Dyson V15?");
-
-    // Mermaid renders to an inline SVG the component ids "orchestration-graph-N".
-    // An empty container means the graph endpoint 404'd and setSource(null) ran.
-    const graph = page.locator('svg[id^="orchestration-graph"]').first();
-    await expect(graph, "the graph must render as SVG, not an empty panel").toBeVisible({
-      timeout: 20000,
+    const res = await page.request.post(`${ORCH_URL}/api/chat`, {
+      headers: { Authorization: `Bearer ${await token(page)}` },
+      data: { message: "Should I buy the Sony WH-1000XM5?", mode: "workflow:pre-purchase" },
+      timeout: 120_000,
     });
+    expect(res.ok(), "POST /api/chat in workflow:pre-purchase").toBe(true);
+    const body = (await res.json()) as { agents_involved: string[] };
+    // The pre-purchase graph's own nodes; a backend that drops `mode` answers in tool mode instead.
+    expect(
+      body.agents_involved.some((a) => /reviews|stock|price|synthes/i.test(a)),
+      `the pre-purchase graph ran, not the tool router (got ${body.agents_involved.join(", ")})`,
+    ).toBe(true);
   });
 
-  test("mode comparison can be run with two modes selected", async ({ page }) => {
-    skipIfKnownGap("mode comparison can be run with two modes selected");
+  test("the graph for a workflow mode is served", async ({ page }) => {
+    skipIfKnownGap("the graph for a workflow mode is served");
     await login(page);
-    await page.goto("/chat");
+    const res = await page.request.get(
+      `${ORCH_URL}/api/orchestration/modes/${encodeURIComponent("workflow:pre-purchase")}/graph`,
+      { headers: { Authorization: `Bearer ${await token(page)}` } },
+    );
+    expect(res.ok(), "GET .../modes/workflow:pre-purchase/graph").toBe(true);
+    const body = (await res.json()) as { mermaid: string | null };
+    expect(body.mermaid, "a workflow mode has a graph").toBeTruthy();
+  });
 
-    await page.getByRole("button", { name: /^Compare$/i }).first().click();
-
-    const dialog = page.locator('[role="dialog"]');
-    await expect(dialog).toBeVisible({ timeout: 15000 });
-
-    // The dialog is populated from GET /api/orchestration/modes. On a backend
-    // without it the dialog still opens but lists nothing, and the run button
-    // stays permanently disabled behind its "pick at least 2 modes" guard —
-    // so listing the modes is the assertion that matters.
-    await expect(dialog.getByText("Tool Router", { exact: false })).toBeVisible();
-    await expect(dialog.getByText(/Pre-Purchase|Handoff|Group Chat/i).first()).toBeVisible();
-
-    // Deliberately stops at "the modes are listed" rather than driving the
-    // selection mechanics. This gate exists to prove the *backend* supplies
-    // what the UI needs; how the dialog toggles a selection is the UI's own
-    // concern and is already covered by the existing suite. Asserting UI
-    // internals here would make the gate fail for reasons that have nothing
-    // to do with parity.
-    await expect(
-      dialog.getByRole("button", { name: /Run comparison/i }),
-      "the run control must be present once modes are available",
-    ).toBeVisible();
+  test("mode comparison runs two modes", async ({ page }) => {
+    skipIfKnownGap("mode comparison runs two modes");
+    await login(page);
+    const res = await page.request.post(`${ORCH_URL}/api/orchestration/compare`, {
+      headers: { Authorization: `Bearer ${await token(page)}` },
+      data: { message: "Should I buy the Dyson V15?", modes: ["workflow:pre-purchase", "workflow:return-replace"] },
+      timeout: 120_000,
+    });
+    expect(res.ok(), "POST /api/orchestration/compare").toBe(true);
+    const body = (await res.json()) as { results: { mode: string; error: string | null }[] };
+    expect(body.results.map((r) => r.mode).sort()).toEqual(["workflow:pre-purchase", "workflow:return-replace"]);
   });
 
   test("a run's checkpoints are listed on /runs", async ({ page }) => {
     skipIfKnownGap("a run's checkpoints are listed on /runs");
-    await login(page);
+    await login(page, ADMIN);
 
     // Deliberately does NOT create a workflow run first. Doing so would
     // require selecting a workflow mode, which couples this test to the mode

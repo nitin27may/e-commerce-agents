@@ -14,7 +14,7 @@ const CAPS = { streams: true, supports_hitl: false, supports_checkpoints: false,
 
 test("New chat works immediately after closing the Compare dialog", async ({ page, isMobile }) => {
   test.skip(isMobile, "the desktop conversation list is under test");
-  await seedAuth(page);
+  await seedAuth(page, "admin"); // Compare lives in the staff Lab
   await mockApi(page);
   // Registered after mockApi, so these take precedence.
   await page.route("**/api/conversations", (route) => route.fulfill({ json: [CONVERSATION] }));
@@ -38,7 +38,7 @@ test("New chat works immediately after closing the Compare dialog", async ({ pag
     }),
   );
 
-  await page.goto("/chat");
+  await page.goto("/lab");
   await page.getByText("Headphones", { exact: true }).first().click();
   await expect(page.getByText("The Sony WH-1000XM5.")).toBeVisible();
 

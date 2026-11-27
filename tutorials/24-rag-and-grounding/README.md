@@ -277,9 +277,10 @@ async def verify_claims(
 ```
 
 It runs on every request through `GroundingVerificationMiddleware`
-(`agents/python/shared/grounding/middleware.py`). The result is visible in the web UI:
+(`agents/python/shared/grounding/middleware.py`). The result is visible in the staff Lab (`/lab`):
 `web/src/components/chat/grounding-badge.tsx` renders "N facts verified against the database, M
-unverified" under any chat message that made a checkable claim.
+unverified" under any message that made a checkable claim. Shoppers do not see the report; the check
+still runs on every answer they get.
 
 ## What's next
 

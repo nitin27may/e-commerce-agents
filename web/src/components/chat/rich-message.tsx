@@ -36,9 +36,32 @@ const SANITIZE_SCHEMA = {
   },
 };
 
+// Element styles for answer text. The `prose` classes this used to rely on come from
+// @tailwindcss/typography, which was never installed, so lists rendered without bullets and
+// headings, tables and code as plain text. Explicit classes keep the chat's own type scale.
+const MARKDOWN_COMPONENTS: ComponentProps<typeof ReactMarkdown>["components"] = {
+  p: (props) => <p className="my-1 leading-relaxed" {...props} />,
+  ul: (props) => <ul className="my-1 list-disc space-y-0.5 pl-5" {...props} />,
+  ol: (props) => <ol className="my-1 list-decimal space-y-0.5 pl-5" {...props} />,
+  li: (props) => <li className="pl-0.5 marker:text-muted-foreground" {...props} />,
+  strong: (props) => <strong className="font-semibold text-foreground" {...props} />,
+  h1: (props) => <h3 className="mt-3 mb-1 text-base font-semibold" {...props} />,
+  h2: (props) => <h3 className="mt-3 mb-1 text-base font-semibold" {...props} />,
+  h3: (props) => <h4 className="mt-3 mb-1 text-sm font-semibold" {...props} />,
+  a: (props) => <a className="text-primary underline underline-offset-2" target="_blank" rel="noopener noreferrer" {...props} />,
+  code: (props) => <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]" {...props} />,
+  table: (props) => (
+    <div className="my-2 overflow-x-auto">
+      <table className="w-full border-collapse text-sm" {...props} />
+    </div>
+  ),
+  th: (props) => <th className="border-b px-2 py-1 text-left font-medium" {...props} />,
+  td: (props) => <td className="border-b px-2 py-1" {...props} />,
+};
+
 function SanitisedMarkdown({ children }: { children: string }) {
   return (
-    <ReactMarkdown rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}>
+    <ReactMarkdown rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]} components={MARKDOWN_COMPONENTS}>
       {children}
     </ReactMarkdown>
   );
@@ -116,7 +139,7 @@ export function RichMessage({ content, streaming, onAction }: RichMessageProps) 
         return (
           <div
             key={i}
-            className="prose prose-sm prose-slate max-w-none prose-p:my-1 prose-li:my-0.5 prose-headings:mt-3 prose-headings:mb-1 prose-ul:my-1 prose-ol:my-1 prose-strong:text-foreground dark:prose-invert"
+            className="max-w-none"
           >
             <SanitisedMarkdown>{seg.text}</SanitisedMarkdown>
           </div>

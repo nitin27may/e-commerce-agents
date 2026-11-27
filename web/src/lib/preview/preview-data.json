@@ -2240,21 +2240,21 @@
       },
       {
         "id": "handoff-order",
-        "label": "Handoff mesh - track my order",
+        "label": "When will my order arrive?",
         "mode": "handoff",
         "new_conversation": true,
         "prompt": "Where is my Patagonia Better Sweater order and when will it arrive?"
       },
       {
         "id": "pre-purchase",
-        "label": "Pre-purchase research",
+        "label": "Is now a good time to buy the XM5?",
         "mode": "workflow:pre-purchase",
         "new_conversation": true,
         "prompt": "I am thinking of buying the Sony WH-1000XM5. Is it a good time to buy?"
       },
       {
         "id": "group-chat",
-        "label": "Round-table debate",
+        "label": "Is the XM5 worth the price?",
         "mode": "group-chat",
         "new_conversation": true,
         "prompt": "Is the Sony WH-1000XM5 worth its price?"

@@ -294,7 +294,7 @@ symptom is a confident, well-formed, wrong answer. Ollama's own documentation re
 > tool sequence, correct arithmetic, clean termination. That is one scenario, not a benchmark:
 > treat it as evidence that the 9B-and-up class is viable here, not as a ranking.
 >
-> If answers look plausible but the agent timeline shows no tool calls, that is the symptom of a
+> If answers look plausible but the agent timeline in the staff Lab (`/lab`) shows no tool calls, that is the symptom of a
 > model that cannot hold up.
 
 {: .warning }

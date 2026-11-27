@@ -140,8 +140,8 @@ No key? `./tutorials/21-capstone-tour/run.sh` is `./scripts/dev.sh --demo --no-k
 prebuilt images and plays back recorded model responses. The suggested prompts in the chat get
 answers, and anything else says it was not recorded. Sign in as `tour@example.com` / `tour123`.
 
-In the chat UI, pick **Compare** from the mode switcher, enter a prompt, select 2 or more modes,
-and run it. `POST /api/orchestration/compare` (`agents/python/orchestrator/routes/orchestration.py`)
+Open the staff Lab (`/lab`; sign in as `admin.demo@gmail.com` or `support.demo@gmail.com`), the chat with its machinery shown: the storefront chat at `/chat` shows shoppers only answers and
+cards. Pick **Compare**, enter a prompt, select 2 or more modes, and run it. `POST /api/orchestration/compare` (`agents/python/orchestrator/routes/orchestration.py`)
 runs your prompt through every selected mode **sequentially**, so the modes do not compete for
 resources and the latency comparison is fair. It returns each mode's text, latency, step count
 and graph, which `web/src/components/chat/mode-comparison.tsx` renders as one column per mode.
@@ -159,7 +159,7 @@ an explicit zero. The compare response does not include the result of grounding 
 response text and the timeline. Measured numbers for all five modes are in the
 [orchestration benchmark](../../docs/orchestration-benchmark.md).
 
-**Also try the single-mode chat.** `web/src/components/chat/mode-switcher.tsx` lets you pin one
+**Also try the single-mode chat** in the Lab. `web/src/components/chat/mode-switcher.tsx` lets you pin one
 mode per conversation. `orchestration-graph.tsx` animates the live graph next to the response as
 the server streams `event: node` frames to the browser. For `workflow:pre-purchase` you watch
 three nodes go active at once, then converge.

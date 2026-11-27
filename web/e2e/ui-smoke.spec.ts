@@ -58,7 +58,6 @@ test.describe("authenticated shell", () => {
       page.getByRole("link", { name: "Product Search" }).first(),
     ).toBeVisible();
     await expect(page.getByText("Recent Orders")).toBeVisible();
-    await expect(page.getByText("Specialist Agents")).toBeVisible();
   });
 
   test("grouped sidebar shows admin nav (Usage, Audit) for admins", async ({ page, isMobile }) => {

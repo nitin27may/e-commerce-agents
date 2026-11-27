@@ -6,8 +6,6 @@ import { useSearchParams } from "next/navigation";
 import { Sparkles, ArrowUp, Loader2, User as UserIcon, Bot } from "lucide-react";
 import { api, type AgentStep, type GroundingReport } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { AgentTimeline } from "@/components/chat/agent-timeline";
-import { GroundingBadge } from "@/components/chat/grounding-badge";
 import { RichMessage } from "@/components/chat/rich-message";
 
 interface Msg {
@@ -110,7 +108,7 @@ function Assistant() {
             </div>
             <h1 className="mt-4 text-xl font-bold tracking-tight">Shopping assistant</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Describe what you want and the agents will search, compare, and recommend.
+              Describe what you want and the assistant will search, compare, and recommend.
               Sign in for orders, tracking, and returns.
             </p>
             <div className="mt-6 grid gap-2 sm:grid-cols-2">
@@ -161,10 +159,6 @@ function Assistant() {
                       m.content
                     )}
                   </div>
-                  {m.role === "assistant" && m.steps && m.steps.length > 0 && (
-                    <AgentTimeline steps={m.steps} />
-                  )}
-                  {m.role === "assistant" && <GroundingBadge report={m.grounding} />}
                 </div>
                 {m.role === "user" && (
                   <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">

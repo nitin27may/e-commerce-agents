@@ -24,7 +24,7 @@ where the time actually went. Cost matters for a parallel reason specific to thi
 argument: [orchestration patterns](06-orchestration-patterns.md) are a genuine trade between
 flexibility and cost, and "which mode is actually cheaper for this kind of question" is an
 empirical question, not a guess — you need real token numbers per mode to answer it, which is
-exactly what the mode-comparison feature in this repo's web UI is for.
+exactly what the mode-comparison feature in this repo's staff Lab (`/lab`) is for.
 
 ## When to use it — and when not to
 
@@ -64,7 +64,7 @@ Cost is a separate, smaller piece: `shared/cost.py::estimate_cost(model, tokens_
 a plain per-model USD-per-1K-token lookup table, falling back to a sane default for an unrecognized
 model rather than raising (a cost estimate should degrade gracefully, not break a request). This is
 what turns the raw token counts a trace captures into the dollar figures shown in the eval reports
-and the mode-comparison UI.
+and the Lab's mode comparison.
 
 All of this lands in the .NET Aspire Dashboard at `localhost:18888` — `docker-compose.yml` runs it
 as a real service (`aspire`, mapped to `18888`/`18889`), and every agent's

@@ -6,6 +6,7 @@ import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { asArray, asNumber } from "@/lib/guards";
 import { ErrorState } from "@/components/error-state";
+import { StaffOnly } from "@/components/staff-only";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,12 +19,21 @@ import {
   Zap,
   ExternalLink,
   Loader2,
+  PauseCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type CheckpointData = Awaited<ReturnType<typeof api.getRunCheckpoints>>;
 
 export default function RunsPage() {
+  return (
+    <StaffOnly>
+      <RunsList />
+    </StaffOnly>
+  );
+}
+
+function RunsList() {
   const [entries, setEntries] = useState<RunEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -238,7 +248,10 @@ function RunRow({
         className="flex w-full items-start gap-3 p-4 text-left hover:bg-muted/30 transition-colors"
       >
         <div className="mt-0.5 shrink-0">
-          {entry.status === "success" ? (
+          {/* A paused run is not finished: a green check beside "Needs approval" read as done. */}
+          {pendingApproval ? (
+            <PauseCircle className="size-4 text-warning" aria-label="Paused" />
+          ) : entry.status === "success" ? (
             <Check className="size-4 text-success" />
           ) : (
             <X className="size-4 text-destructive" />

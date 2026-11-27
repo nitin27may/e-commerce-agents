@@ -11,13 +11,14 @@ describe("DEMO_SCENARIOS", () => {
     expect(DEMO_SCENARIOS).toHaveLength(8);
   });
 
-  it("every scenario has a non-empty id, label, description, prompt, and at least one agent", () => {
+  it("every scenario has a non-empty id, label, description and prompt, and names no agent", () => {
     for (const s of DEMO_SCENARIOS) {
       expect(s.id, `${s.label} missing id`).toBeTruthy();
       expect(s.label, `${s.id} missing label`).toBeTruthy();
       expect(s.description, `${s.id} missing description`).toBeTruthy();
       expect(s.prompt, `${s.id} missing prompt`).toBeTruthy();
-      expect(s.agents.length, `${s.id} must name at least one agent`).toBeGreaterThan(0);
+      // Customer-facing: a scenario says what the shopper gets, never which agent does it.
+      expect(s, `${s.id} names agents`).not.toHaveProperty("agents");
       expect(s.icon, `${s.id} missing icon`).toBeTruthy();
     }
   });

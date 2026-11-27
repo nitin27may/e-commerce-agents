@@ -6,10 +6,8 @@ import { motion, useReducedMotion } from "framer-motion";
 import {
   Package,
   ShoppingCart,
-  Bot,
   Sparkles,
   ArrowRight,
-  Activity,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
@@ -81,7 +79,7 @@ export default function HomePage() {
           Good {timeGreeting()}, {firstName}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Your multi-agent shopping concierge. Ask anything, or jump back in.
+          Your shopping assistant. Ask anything, or jump back in.
         </p>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -108,7 +106,7 @@ export default function HomePage() {
         variants={reduce ? undefined : listStagger}
         initial={reduce ? undefined : "hidden"}
         animate={reduce ? undefined : "visible"}
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+        className="grid gap-4 sm:grid-cols-2"
       >
         {[
           {
@@ -122,18 +120,6 @@ export default function HomePage() {
             value: cart?.item_count ?? 0,
             icon: ShoppingCart,
             hint: cart?.subtotal ? formatPrice(cart.subtotal) : "empty",
-          },
-          {
-            label: "Specialist Agents",
-            value: 6,
-            icon: Bot,
-            hint: "collaborating",
-          },
-          {
-            label: "Avg Response",
-            value: "~1.2s",
-            icon: Activity,
-            hint: "across agents",
           },
         ].map((s) => (
           <motion.div key={s.label} variants={reduce ? undefined : listItem}>
@@ -228,32 +214,14 @@ export default function HomePage() {
             </Link>
           </div>
 
-          <div className="rounded-xl border border-dashed bg-card/50 p-4">
-            <div className="flex items-center gap-2">
-              <Activity className="size-4 text-primary" />
-              <h2 className="text-sm font-semibold">Agent Activity</h2>
-            </div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              A live timeline of which specialists handled your requests is
-              coming soon.
-            </p>
-          </div>
         </div>
       </div>
 
       {/* Demo scenarios */}
       <div>
         <SectionHeader
-          eyebrow="See the agents in action"
-          title="Demo Scenarios"
-          action={
-            <Link
-              href="/agents"
-              className="text-xs font-medium text-primary hover:underline"
-            >
-              View all agents
-            </Link>
-          }
+          eyebrow="Ask the assistant"
+          title="Things you can ask"
         />
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {DEMO_SCENARIOS.map((s) => (

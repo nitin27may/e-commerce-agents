@@ -56,7 +56,7 @@ export default function LoginPage() {
             E-Commerce Agents
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Multi-agent e-commerce platform
+            A demo store with an AI shopping assistant
           </p>
         </div>
 

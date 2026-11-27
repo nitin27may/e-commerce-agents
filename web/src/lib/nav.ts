@@ -12,6 +12,7 @@ import {
   Activity,
   Lightbulb,
   Gauge,
+  FlaskConical,
   PackageCheck,
   type LucideIcon,
 } from "lucide-react";
@@ -43,11 +44,9 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Home", href: "/home", icon: LayoutDashboard },
       { label: "Chat", href: "/chat", icon: MessageSquare },
-      { label: "Agents", href: "/agents", icon: Bot },
       { label: "Products", href: "/products", icon: ShoppingBag },
       { label: "Cart", href: "/cart", icon: ShoppingCart, cartBadge: true },
       { label: "Orders", href: "/orders", icon: Package },
-      { label: "Runs", href: "/runs", icon: Activity },
     ],
   },
   {
@@ -63,6 +62,9 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Overview", href: "/admin", icon: Shield, adminOnly: true },
       { label: "Approvals", href: "/admin/approvals", icon: CheckCircle, staffOnly: true },
+      { label: "Runs", href: "/runs", icon: Activity, staffOnly: true },
+      { label: "Agents", href: "/agents", icon: Bot, staffOnly: true },
+      { label: "Lab", href: "/lab", icon: FlaskConical, staffOnly: true },
       { label: "Decisions", href: "/admin/decisions", icon: Gauge, adminOnly: true },
       { label: "Returns", href: "/admin/returns", icon: PackageCheck, adminOnly: true },
       { label: "Usage", href: "/admin/usage", icon: BarChart3, adminOnly: true },
