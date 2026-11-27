@@ -5,9 +5,15 @@ import { useRouter } from "next/navigation";
 import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api, type UserProfile as Profile } from "@/lib/api";
-import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { CHIP_CLASS, TONE_BADGE_CLASS } from "@/components/ui/status-badge";
+import { Button } from "@/components/ui/button";
+import { CHIP_CLASS, TONE_BADGE_CLASS, TONE_TEXT_CLASS } from "@/components/ui/status-badge";
+import { StatCard } from "@/components/ui/stat-card";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { formatDate, formatPrice } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import {
   Card,
   CardHeader,
@@ -40,11 +46,13 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const TIER_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
-  bronze: { bg: "bg-warning/10", text: "text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning", accent: "#CD7F32" },
-  silver: { bg: "bg-muted", text: "text-muted-foreground", accent: "#C0C0C0" },
-  gold: { bg: "bg-warning/15", text: "text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning", accent: "#FFD700" },
+/** Tier tints come from the warning token (gold, bronze) and muted (silver) so text keeps AA contrast. */
+const TIER_STYLE: Record<string, { chip: string; avatar: string }> = {
+  bronze: { chip: TONE_BADGE_CLASS.warning, avatar: cn("bg-warning/10", TONE_TEXT_CLASS.warning) },
+  silver: { chip: TONE_BADGE_CLASS.neutral, avatar: "bg-muted text-muted-foreground" },
+  gold: { chip: cn("bg-warning/15 border-warning/40", TONE_TEXT_CLASS.warning), avatar: cn("bg-warning/15", TONE_TEXT_CLASS.warning) },
 };
+const DEFAULT_TIER_STYLE = { chip: TONE_BADGE_CLASS.neutral, avatar: "bg-primary/10 text-primary" };
 
 const ROLE_COLORS: Record<string, string> = {
   customer: CHIP_CLASS.primary,
@@ -60,24 +68,10 @@ const TIER_THRESHOLDS: Record<string, { next: string; amount: number } | null> =
   gold: null,
 };
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
+const formatCurrency = formatPrice;
 
-function formatDate(dateStr: string): string {
-  try {
-    return new Date(dateStr).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  } catch {
-    return dateStr;
-  }
+function capitalize(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
 function getInitials(name: string): string {
@@ -90,10 +84,7 @@ function getInitials(name: string): string {
 }
 
 function formatRole(role: string): string {
-  return role
-    .split("_")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
+  return capitalize(role.replace(/_/g, " "));
 }
 
 // ---------------------------------------------------------------------------
@@ -159,376 +150,243 @@ export default function ProfilePage() {
 
   if (authLoading) return null;
 
+  const tier = profile ? (TIER_STYLE[profile.loyalty_tier] ?? DEFAULT_TIER_STYLE) : DEFAULT_TIER_STYLE;
+  const nextTier = profile ? TIER_THRESHOLDS[profile.loyalty_tier] : null;
+
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-primary">
-              <User className="size-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">My Profile</h1>
-              <p className="text-sm text-muted-foreground">
-                Your account details and loyalty status
-              </p>
-            </div>
-          </div>
+    <PageContainer>
+      <PageHeader icon={User} title="Profile" description="Your account details and loyalty status." />
+
+      {loading && (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="size-6 animate-spin text-primary" />
+          <span className="ml-2 text-sm text-muted-foreground">Loading profile...</span>
         </div>
-      </div>
+      )}
 
-      {/* Content */}
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {loading && (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="size-6 animate-spin text-primary" />
-            <span className="ml-2 text-sm text-muted-foreground">
-              Loading profile...
-            </span>
-          </div>
-        )}
+      {error && (
+        <ErrorState inline message={error} onRetry={loadProfile} homeHref="/home" homeLabel="Back to home" />
+      )}
 
-        {error && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {error}
-          </div>
-        )}
-
-        {!loading && !error && profile && (
-          <div className="space-y-8">
-            {/* Profile header card */}
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
-                  {/* Avatar */}
-                  <div
-                    className="flex size-20 shrink-0 items-center justify-center rounded-full text-2xl font-bold text-white"
-                    style={{ backgroundColor: TIER_COLORS[profile.loyalty_tier]?.accent ?? "#64748b" }}
-                  >
-                    {getInitials(profile.name)}
-                  </div>
-
-                  <div className="flex-1 text-center sm:text-left">
-                    <div className="flex flex-col items-center gap-2 sm:flex-row">
-                      <h2 className="text-xl font-bold text-foreground">
-                        {profile.name}
-                      </h2>
-                      <Badge
-                        className={`${ROLE_COLORS[profile.role] ?? "bg-muted text-muted-foreground"} border-0`}
-                      >
-                        {profile.role === "admin" && (
-                          <Shield className="mr-1 size-3" />
-                        )}
-                        {formatRole(profile.role)}
-                      </Badge>
-                    </div>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {profile.email}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Member since {formatDate(profile.member_since)}
-                    </p>
-                  </div>
+      {!loading && !error && profile && (
+        <div className="space-y-6">
+          {/* Identity */}
+          <Card>
+            <CardContent>
+              <div className="flex flex-col items-center gap-4 sm:flex-row">
+                <div
+                  className={cn(
+                    "flex size-16 shrink-0 items-center justify-center rounded-full text-xl font-semibold",
+                    tier.avatar,
+                  )}
+                  aria-hidden
+                >
+                  {getInitials(profile.name)}
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Stats cards */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {/* Loyalty Tier */}
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Loyalty Tier
-                  </CardTitle>
-                  <Crown
-                    className="size-4"
-                    style={{ color: TIER_COLORS[profile.loyalty_tier]?.accent ?? "#64748b" }}
-                  />
-                </CardHeader>
-                <CardContent>
-                  <div
-                    className="text-2xl font-bold capitalize"
-                    style={{ color: TIER_COLORS[profile.loyalty_tier]?.accent ?? "#64748b" }}
-                  >
-                    {profile.loyalty_tier}
+                <div className="min-w-0 flex-1 text-center sm:text-left">
+                  <div className="flex flex-col items-center gap-2 sm:flex-row">
+                    <h2 className="text-xl font-semibold tracking-tight text-foreground">{profile.name}</h2>
+                    <Badge variant="outline" className={ROLE_COLORS[profile.role] ?? CHIP_CLASS.slate}>
+                      {profile.role === "admin" && <Shield className="size-3" />}
+                      {formatRole(profile.role)}
+                    </Badge>
+                    <Badge variant="outline" className={tier.chip}>
+                      <Crown className="size-3" />
+                      {capitalize(profile.loyalty_tier)} member
+                    </Badge>
                   </div>
-                </CardContent>
-              </Card>
+                  <p className="mt-1 text-sm text-muted-foreground">{profile.email}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Member since {formatDate(profile.member_since)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-              {/* Total Spend */}
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Total Spend
-                  </CardTitle>
-                  <DollarSign className="size-4 text-success" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-foreground">
-                    {formatCurrency(profile.total_spend)}
-                  </div>
-                </CardContent>
-              </Card>
+          {/* Stats */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard label="Loyalty tier" value={capitalize(profile.loyalty_tier)} icon={Crown} />
+            <StatCard label="Total spend" value={formatCurrency(profile.total_spend)} icon={DollarSign} />
+            <StatCard label="Orders" value={profile.order_count} icon={Package} />
+            <StatCard label="Reviews" value={profile.review_count} icon={MessageSquare} />
+          </div>
 
-              {/* Orders */}
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Orders
-                  </CardTitle>
-                  <Package className="size-4 text-info" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-foreground">
-                    {profile.order_count}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Reviews */}
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Reviews
-                  </CardTitle>
-                  <MessageSquare className="size-4 text-warning" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-foreground">
-                    {profile.review_count}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Loyalty Benefits */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Loyalty benefits */}
             <Card>
               <CardHeader>
-                <div className="flex items-center gap-2">
-                  <Award
-                    className="size-5"
-                    style={{ color: TIER_COLORS[profile.loyalty_tier]?.accent ?? "#64748b" }}
-                  />
-                  <CardTitle className="text-base font-semibold text-foreground">
-                    Loyalty Benefits
-                  </CardTitle>
-                  <Badge
-                    className={`${TIER_COLORS[profile.loyalty_tier]?.bg ?? "bg-muted"} ${TIER_COLORS[profile.loyalty_tier]?.text ?? "text-muted-foreground"} border-0 capitalize`}
-                  >
-                    {profile.loyalty_tier} Tier
-                  </Badge>
-                </div>
+                <CardTitle className="flex items-center gap-2">
+                  <Award className="size-4 text-muted-foreground" aria-hidden />
+                  Loyalty benefits
+                </CardTitle>
               </CardHeader>
-              <Separator />
-              <CardContent className="pt-6">
-                <div className="space-y-4">
-                  {/* Discount */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <DollarSign className="size-4 text-muted-foreground" />
-                      <span>Order Discount</span>
-                    </div>
-                    <span className="text-sm font-medium text-foreground">
+              <CardContent>
+                <dl className="space-y-3 text-sm">
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-muted-foreground">Order discount</dt>
+                    <dd className="text-right font-medium text-foreground">
                       {profile.tier_benefits.discount_pct > 0
                         ? `${profile.tier_benefits.discount_pct}% on all orders`
                         : "Not available"}
-                    </span>
+                    </dd>
                   </div>
-
-                  {/* Free Shipping */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Package className="size-4 text-muted-foreground" />
-                      <span>Free Shipping</span>
-                    </div>
-                    <span className="text-sm font-medium text-foreground">
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-muted-foreground">Free shipping</dt>
+                    <dd className="text-right font-medium text-foreground">
                       {profile.tier_benefits.free_shipping_threshold != null
-                        ? `Free shipping on orders over ${formatCurrency(profile.tier_benefits.free_shipping_threshold)}`
+                        ? `On orders over ${formatCurrency(profile.tier_benefits.free_shipping_threshold)}`
                         : "Not available"}
-                    </span>
+                    </dd>
                   </div>
-
-                  {/* Priority Support */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Shield className="size-4 text-muted-foreground" />
-                      <span>Priority Support</span>
-                    </div>
-                    <span className="flex items-center gap-1 text-sm font-medium">
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-muted-foreground">Priority support</dt>
+                    <dd className="flex items-center gap-1 font-medium">
                       {profile.tier_benefits.priority_support ? (
-                        <>
-                          <Check className="size-4 text-success" />
-                          <span className="text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success">Included</span>
-                        </>
+                        <span className={cn("flex items-center gap-1", TONE_TEXT_CLASS.success)}>
+                          <Check className="size-4" aria-hidden />
+                          Included
+                        </span>
                       ) : (
-                        <>
-                          <X className="size-4 text-muted-foreground" />
-                          <span className="text-muted-foreground">Not available</span>
-                        </>
+                        <span className="flex items-center gap-1 text-muted-foreground">
+                          <X className="size-4" aria-hidden />
+                          Not available
+                        </span>
                       )}
-                    </span>
+                    </dd>
                   </div>
+                </dl>
 
-                  {/* Tier progress */}
-                  {TIER_THRESHOLDS[profile.loyalty_tier] && (
-                    <>
-                      <Separator />
-                      <div className="flex items-start gap-2">
-                        <TrendingUp className="mt-0.5 size-4 text-primary" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-muted-foreground">
-                            Progress to {TIER_THRESHOLDS[profile.loyalty_tier]!.next}
-                          </p>
-                          {(() => {
-                            const threshold = TIER_THRESHOLDS[profile.loyalty_tier]!.amount;
-                            const remaining = Math.max(0, threshold - profile.total_spend);
-                            const progress = Math.min(100, (profile.total_spend / threshold) * 100);
-                            return (
-                              <>
-                                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
-                                  <div
-                                    className="h-full rounded-full bg-primary transition-all"
-                                    style={{ width: `${progress}%` }}
-                                  />
-                                </div>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  {remaining > 0
-                                    ? `Spend ${formatCurrency(remaining)} more to reach ${TIER_THRESHOLDS[profile.loyalty_tier]!.next}`
-                                    : `You've qualified for ${TIER_THRESHOLDS[profile.loyalty_tier]!.next}!`}
-                                </p>
-                              </>
-                            );
-                          })()}
-                        </div>
+                {nextTier && (() => {
+                  const remaining = Math.max(0, nextTier.amount - profile.total_spend);
+                  const progress = Math.min(100, (profile.total_spend / nextTier.amount) * 100);
+                  return (
+                    <div className="mt-4 border-t border-border pt-4">
+                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                        <TrendingUp className="size-4 text-muted-foreground" aria-hidden />
+                        Progress to {nextTier.next}
                       </div>
-                    </>
-                  )}
-                </div>
+                      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {remaining > 0
+                          ? `Spend ${formatCurrency(remaining)} more to reach ${nextTier.next}.`
+                          : `You qualify for ${nextTier.next}.`}
+                      </p>
+                    </div>
+                  );
+                })()}
               </CardContent>
             </Card>
 
-            {/* Account Details */}
+            {/* Account details */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-base font-semibold text-foreground">
-                  Account Details
+                <CardTitle className="flex items-center gap-2">
+                  <User className="size-4 text-muted-foreground" aria-hidden />
+                  Account details
                 </CardTitle>
               </CardHeader>
-              <Separator />
-              <CardContent className="pt-6">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Mail className="size-4 text-muted-foreground" />
-                      <span>Email</span>
-                    </div>
-                    <span className="text-sm font-medium text-foreground">
-                      {profile.email}
-                    </span>
+              <CardContent>
+                <dl className="space-y-3 text-sm">
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="flex items-center gap-2 text-muted-foreground">
+                      <Mail className="size-4" aria-hidden />
+                      Email
+                    </dt>
+                    <dd className="truncate font-medium text-foreground">{profile.email}</dd>
                   </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Shield className="size-4 text-muted-foreground" />
-                      <span>Role</span>
-                    </div>
-                    <Badge
-                      className={`${ROLE_COLORS[profile.role] ?? "bg-muted text-muted-foreground"} border-0`}
-                    >
-                      {formatRole(profile.role)}
-                    </Badge>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="flex items-center gap-2 text-muted-foreground">
+                      <Shield className="size-4" aria-hidden />
+                      Role
+                    </dt>
+                    <dd className="font-medium text-foreground">{formatRole(profile.role)}</dd>
                   </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <User className="size-4 text-muted-foreground" />
-                      <span>User ID</span>
-                    </div>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {profile.id.slice(0, 8)}...{profile.id.slice(-4)}
-                    </span>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="flex items-center gap-2 text-muted-foreground">
+                      <User className="size-4" aria-hidden />
+                      Account ID
+                    </dt>
+                    <dd className="font-mono text-xs text-muted-foreground">{profile.id.slice(0, 8)}</dd>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* AI Memory */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Brain className="size-5 text-primary" />
-                    <CardTitle className="text-base font-semibold text-foreground">
-                      AI Memory
-                    </CardTitle>
-                  </div>
-                  <span className="text-xs text-muted-foreground">
-                    What the agents remember about you
-                  </span>
-                </div>
-              </CardHeader>
-              <Separator />
-              <CardContent className="pt-6">
-                {memoriesLoading ? (
-                  <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" />
-                    <span>Loading memories...</span>
-                  </div>
-                ) : memories.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border py-8 text-center">
-                    <Brain className="mx-auto mb-2 size-8 text-muted-foreground/40" />
-                    <p className="text-sm text-muted-foreground">
-                      No memories yet. Chat with the product or review agents to build your profile.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {memories.map((memory) => (
-                      <div
-                        key={memory.id}
-                        className="flex items-start justify-between gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3"
-                      >
-                        <div className="flex-1 space-y-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              className="border-0 bg-primary/10 text-primary text-xs capitalize"
-                            >
-                              {memory.category}
-                            </Badge>
-                            <span className="flex items-center gap-0.5" title={`Importance: ${memory.importance}/10`}>
-                              {Array.from({ length: Math.min(5, Math.ceil(memory.importance / 2)) }).map((_, i) => (
-                                <Star key={i} className="size-3 fill-warning text-warning" />
-                              ))}
-                            </span>
-                          </div>
-                          <p className="text-sm text-foreground">{memory.content}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatDate(memory.created_at)}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => handleDeleteMemory(memory.id)}
-                          disabled={deletingId === memory.id}
-                          className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                          title="Forget this memory"
-                        >
-                          {deletingId === memory.id ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="size-4" />
-                          )}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                </dl>
               </CardContent>
             </Card>
           </div>
-        )}
-      </div>
-    </div>
+
+          {/* Assistant memory */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Brain className="size-4 text-muted-foreground" aria-hidden />
+                What the assistant remembers
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Preferences picked up from your conversations. Remove anything you want forgotten.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {memoriesLoading ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  <span>Loading...</span>
+                </div>
+              ) : memories.length === 0 ? (
+                <EmptyState
+                  icon={Brain}
+                  title="Nothing saved yet"
+                  description="Chat with the assistant and your preferences will show up here."
+                  className="py-10"
+                />
+              ) : (
+                <ul className="space-y-3">
+                  {memories.map((memory) => (
+                    <li
+                      key={memory.id}
+                      className="flex items-start justify-between gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3"
+                    >
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className={CHIP_CLASS.primary}>
+                            {capitalize(memory.category)}
+                          </Badge>
+                          <span
+                            className="flex items-center gap-0.5"
+                            title={`Importance: ${memory.importance}/10`}
+                          >
+                            {Array.from({ length: Math.min(5, Math.ceil(memory.importance / 2)) }).map((_, i) => (
+                              <Star key={i} className="size-3 fill-warning text-warning" aria-hidden />
+                            ))}
+                          </span>
+                        </div>
+                        <p className="text-sm text-foreground">{memory.content}</p>
+                        <p className="text-xs text-muted-foreground">{formatDate(memory.created_at)}</p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => handleDeleteMemory(memory.id)}
+                        disabled={deletingId === memory.id}
+                        className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        aria-label="Forget this"
+                        title="Forget this"
+                      >
+                        {deletingId === memory.id ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="size-4" />
+                        )}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </PageContainer>
   );
 }
