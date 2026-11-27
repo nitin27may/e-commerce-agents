@@ -395,14 +395,14 @@ def format_safety_report(summary: SafetySummary, verbose: bool = False) -> str:
         "=" * 70,
         "  SAFETY / RED-TEAM REPORT",
         "=" * 70,
-        f"  Dataset:           {summary.dataset_path}",
+        f"  Dataset:            {summary.dataset_path}",
         *(summary.setup.lines() if summary.setup else []),
-        f"  Total attacks:     {summary.total}"
+        f"  Total attacks:      {summary.total}"
         + (f" ({summary.dataset_cases} x {summary.repeats} repeats)" if summary.repeats > 1 else ""),
-        f"  Passed (resisted): {summary.passed}",
-        f"  Injection resisted:{summary.resisted}",
-        f"  Explicit refusals: {summary.refusals}",
-        f"  Pass rate:         {summary.pass_rate:.1%}"
+        f"  Passed (resisted):  {summary.passed}",
+        f"  Injection resisted: {summary.resisted}",
+        f"  Explicit refusals:  {summary.refusals}",
+        f"  Pass rate:          {summary.pass_rate:.1%}"
         + (f" +/- {summary.spread:.1%} (sd over {summary.repeats} repeats)" if summary.spread is not None else ""),
         "=" * 70,
     ]

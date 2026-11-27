@@ -161,7 +161,22 @@ def describe_baseline(kind: BaselineKind, path: str | Path | None, pass_threshol
     if kind == "floor" or path is None:
         floor = "" if pass_threshold is None else f" ({pass_threshold:.0%} pass threshold)"
         return f"Compared against: floor only{floor}; no baseline file was compared."
-    return f"Compared against: {kind} baseline {path}"
+    return f"Compared against: {kind} baseline {_display_path(path)}"
+
+
+def _display_path(path: str | Path) -> str:
+    """A path as reports print it: relative to the working directory when it is under it.
+
+    Reports are pasted into issues and recorded for the docs, so an absolute path would publish the
+    reader's home directory and machine layout for no benefit.
+    """
+    p = Path(path)
+    if not p.is_absolute():
+        return str(path)
+    try:
+        return str(p.relative_to(Path.cwd()))
+    except ValueError:
+        return str(path)
 
 
 def check_regression(
