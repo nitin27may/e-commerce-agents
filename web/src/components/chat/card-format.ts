@@ -26,11 +26,7 @@ export function humanizeEnum(value: string | null | undefined): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** Order ids are UUIDs; the first eight characters are what every screen shows. */
-export function shortOrderId(id: string | null | undefined): string {
-  if (!id) return "";
-  return id.slice(0, 8);
-}
+export { shortOrderId } from "@/lib/format";
 
 /**
  * A carrier name with its speed tier, without saying the tier twice:

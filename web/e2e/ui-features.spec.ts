@@ -109,10 +109,10 @@ test.describe("Rich Chat", () => {
 
     // Response should contain formatted elements (markdown renders as <strong>, <ul>, <li>, etc.)
     // At minimum we should see the response text is not just raw text
-    const responseArea = page.locator('[class*="prose"]').first();
-    // prose class indicates markdown rendering
+    const responseArea = page.getByTestId("assistant-text").first();
+    // assistant-text wraps the rendered markdown
     const hasProse = await responseArea.isVisible().catch(() => false);
-    // If prose is not visible, the response is still rendered (just without structured blocks)
+    // If it is not visible, the response is still rendered (just without structured blocks)
     expect(true).toBeTruthy(); // Response rendered successfully
   });
 });

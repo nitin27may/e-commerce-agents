@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
-import { formatDuration, formatNumber } from "@/lib/format";
+import { formatDate, formatDuration, formatNumber } from "@/lib/format";
 import { PageContainer, PageHeader } from "@/components/ui/page-header";
 import { AccessDenied } from "@/components/ui/access-denied";
 import { StatCard } from "@/components/ui/stat-card";
@@ -349,6 +349,40 @@ export default function AdminUsagePage() {
             )}
           </div>
 
+          {/* Per-day totals: with a live model this is where token spend shows up day by day. */}
+          <div className="rounded-xl bg-card ring-1 ring-foreground/10">
+            <h2 className="border-b px-4 py-3 text-sm font-semibold">Daily totals (last 7 days)</h2>
+            {stats.daily_trend.length === 0 ? (
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                No usage recorded in the last 7 days.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="pl-4">Date</TableHead>
+                    <TableHead className="text-right">Invocations</TableHead>
+                    <TableHead className="text-right">Tokens in</TableHead>
+                    <TableHead className="text-right">Tokens out</TableHead>
+                    <TableHead className="pr-4 text-right">Total tokens</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stats.daily_trend.map((day) => (
+                    <TableRow key={day.date}>
+                      <TableCell className="pl-4 font-medium">{formatDate(day.date)}</TableCell>
+                      <TableCell className="text-right">{formatNumber(day.invocations)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{formatNumber(day.tokens_in)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{formatNumber(day.tokens_out)}</TableCell>
+                      <TableCell className="pr-4 text-right text-muted-foreground">
+                        {formatNumber(day.tokens_in + day.tokens_out)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
         </div>
       )}
     </PageContainer>

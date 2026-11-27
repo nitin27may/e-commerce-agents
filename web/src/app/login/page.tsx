@@ -36,7 +36,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  async function signIn(withEmail: string, withPassword: string) {
+  async function signIn(withEmail: string, withPassword: string, demo = false) {
     setError("");
     setIsLoading(true);
     try {
@@ -45,7 +45,13 @@ export default function LoginPage() {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Login failed. Please try again.";
-      setError(message);
+      // A deployment that generates its own passwords (scripts/azure-up.sh --generated-passwords) refuses the
+      // published demo ones; say so rather than show a bare "invalid credentials".
+      setError(
+        demo
+          ? "This deployment does not use the published demo passwords. Sign in with the credentials its operator gave you."
+          : message,
+      );
     } finally {
       setIsLoading(false);
     }
@@ -63,7 +69,7 @@ export default function LoginPage() {
   function signInAsDemo(account: (typeof DEMO_ACCOUNTS)[number]) {
     setEmail(account.email);
     setPassword(account.password);
-    void signIn(account.email, account.password);
+    void signIn(account.email, account.password, true);
   }
 
   return (

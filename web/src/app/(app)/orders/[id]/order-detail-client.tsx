@@ -14,7 +14,7 @@ import { StatusBadge, TONE_BADGE_CLASS, TONE_TEXT_CLASS } from "@/components/ui/
 import { PageContainer, PageHeader } from "@/components/ui/page-header";
 import { OrderStatusBadge, STATUS_CONFIG as ORDER_STATUS } from "@/components/status-badge";
 import { ErrorState } from "@/components/error-state";
-import { formatDate, formatPrice } from "@/lib/format";
+import { formatDate, formatPrice, shortOrderId } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -272,7 +272,7 @@ export default function OrderDetailPage() {
             icon={Package}
             title={
               <span className="flex flex-wrap items-center gap-3">
-                Order #{order.id.slice(0, 8)}
+                Order #{shortOrderId(order.id)}
                 <OrderStatusBadge status={order.status} />
               </span>
             }

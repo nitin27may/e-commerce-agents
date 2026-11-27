@@ -7,7 +7,7 @@ import { Bot, Package, ShoppingCart, ArrowRight } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
 import { api, type OrderSummary as HomeOrder } from "@/lib/api";
-import { formatPrice, formatDate } from "@/lib/format";
+import { formatPrice, formatDate, shortOrderId } from "@/lib/format";
 import { productImageUrl } from "@/lib/images";
 import { QUICK_PROMPTS, DEMO_SCENARIOS, chatPromptHref } from "@/lib/scenarios";
 import { pageEnter, instant } from "@/lib/motion";
@@ -143,7 +143,7 @@ export default function HomePage() {
                       >
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">
-                            Order #{o.id.slice(0, 8)}
+                            Order #{shortOrderId(o.id)}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {formatDate(o.date)}

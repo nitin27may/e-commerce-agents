@@ -28,7 +28,7 @@ import {
   Star,
   Loader2,
 } from "lucide-react";
-import { formatPrice, formatDate } from "@/lib/format";
+import { formatPrice, formatDate, shortOrderId } from "@/lib/format";
 import { OrderStatusBadge } from "@/components/status-badge";
 
 export default function SellerDashboardPage() {
@@ -151,7 +151,7 @@ export default function SellerDashboardPage() {
                       {recentOrders.map((order) => (
                         <TableRow key={order.id}>
                           <TableCell className="font-mono text-xs text-muted-foreground">
-                            #{order.id?.slice(0, 8)}
+                            #{shortOrderId(order.id)}
                           </TableCell>
                           <TableCell>
                             <div>

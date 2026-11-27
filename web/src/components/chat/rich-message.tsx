@@ -103,7 +103,7 @@ export function RichMessage({ content, streaming, onAction }: RichMessageProps) 
     <div className="space-y-3">
       {segments.map((seg, i) =>
         seg.type === "text" ? (
-          <div key={i} className="max-w-none">
+          <div key={i} className="max-w-none" data-testid="assistant-text">
             <SanitisedMarkdown>{seg.text}</SanitisedMarkdown>
           </div>
         ) : (

@@ -12,7 +12,7 @@ import { PageContainer, PageHeader } from "@/components/ui/page-header";
 import { OrderStatusBadge, STATUS_CONFIG } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
-import { formatDate, formatPrice } from "@/lib/format";
+import { formatDate, formatPrice, shortOrderId } from "@/lib/format";
 import { Package, Truck, ChevronRight } from "lucide-react";
 
 function getStatusLabel(status: string): string {
@@ -155,7 +155,7 @@ export default function OrdersPage() {
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-3">
                       <span className="text-sm font-semibold text-foreground">
-                        Order #{order.id.slice(0, 8)}
+                        Order #{shortOrderId(order.id)}
                       </span>
                       <OrderStatusBadge status={order.status} />
                     </div>
