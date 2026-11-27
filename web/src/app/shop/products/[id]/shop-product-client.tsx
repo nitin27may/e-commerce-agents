@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Sparkles, Star, Loader2 } from "lucide-react";
+import { ArrowLeft, Bot, Star, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { formatPrice } from "@/lib/format";
 import { productImageUrl } from "@/lib/images";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface ProductDetail {
@@ -85,7 +86,7 @@ export default function ProductDetailPage() {
           {product ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={productImageUrl(product.id, 800, 600, product.image_url, product.category)}
+              src={productImageUrl(product.id, 800, 600, product.image_url, product.category, product.name)}
               alt={product.name}
               className="aspect-[4/3] w-full object-cover"
             />
@@ -102,7 +103,7 @@ export default function ProductDetailPage() {
               )}
               <h1 className="mt-1 text-2xl font-bold tracking-tight">{product.name}</h1>
               <div className="mt-3 flex items-center gap-3">
-                <span className="text-2xl font-semibold text-primary">
+                <span className="text-2xl font-semibold text-foreground">
                   {formatPrice(product.price)}
                 </span>
                 {discount > 0 && (
@@ -110,15 +111,13 @@ export default function ProductDetailPage() {
                     <span className="text-muted-foreground line-through">
                       {formatPrice(product.original_price!)}
                     </span>
-                    <span className="rounded-full bg-destructive px-2 py-0.5 text-xs font-semibold text-white">
-                      -{discount}%
-                    </span>
+                    <Badge variant="destructive-solid">Save {discount}%</Badge>
                   </>
                 )}
               </div>
               {product.rating != null && product.rating > 0 && (
                 <div className="mt-2 flex items-center gap-1 text-sm text-muted-foreground">
-                  <Star className="size-4 fill-amber-400 text-amber-400" />
+                  <Star className="size-4 fill-warning text-warning" />
                   {product.rating.toFixed(1)}
                   {product.review_count ? ` · ${product.review_count} reviews` : ""}
                 </div>
@@ -154,7 +153,7 @@ export default function ProductDetailPage() {
                   variant="outline"
                   size="lg"
                 >
-                  <Sparkles className="size-4 text-primary" /> Ask the assistant
+                  <Bot className="size-4 text-primary" aria-hidden /> Ask the assistant
                 </Button>
               </div>
             </>
