@@ -36,7 +36,7 @@ export const DEMO_SCENARIOS: Scenario[] = [
     label: "Product Search",
     chipLabel: "Find headphones under $300",
     description: "Find products by what you need and what you want to spend",
-    prompt: "Find me wireless headphones under $300 with good noise cancellation",
+    prompt: "Find me noise-cancelling wireless headphones under $300",
     icon: Search,
   },
   {

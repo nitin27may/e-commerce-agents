@@ -1,4 +1,4 @@
-"""The seeded price history gives get_price_history's 60-day window 59 points, and the demo recordings agree.
+"""The seeded price history gives get_price_history's N-day window N-1 points (60 days: 59), and the demo recordings agree.
 
 The seeder writes one row per day at ``now - 90 .. now - 1`` days. ``get_price_history`` keeps
 ``recorded_at >= NOW() - 60 days``, so the row seeded at exactly ``now - 60 days`` is already outside the window
@@ -50,10 +50,14 @@ async def test_the_seed_writes_ninety_daily_rows_and_the_window_boundary_row_fal
     assert _within(rows, queried_at, 30) == 29
 
 
-def test_the_recorded_price_check_saw_the_same_window() -> None:
-    points = {
-        int(match)
+def test_the_recorded_price_checks_saw_the_same_window() -> None:
+    # Whatever window the model asked for, a fresh seed gives it one point fewer than its days (the boundary row is
+    # already outside). A recording that disagrees would miss on every fresh seed.
+    windows = [
+        (int(days), int(points))
         for path in REPLAY_DIR.glob("*.json")
-        for match in re.findall(r'period_days\\": 60.*?data_points\\": (\d+)', path.read_text())
-    }
-    assert points == {59}, f"the 60-day recordings hold data_points {sorted(points)}; a fresh seed gives 59"
+        for days, points in re.findall(r'period_days\\": (\d+).*?data_points\\": (\d+)', path.read_text())
+    ]
+    assert windows, "no recorded get_price_history result: the demo set should include a price check"
+    wrong = sorted({(d, p) for d, p in windows if p != d - 1})
+    assert not wrong, f"recorded (period_days, data_points) pairs a fresh seed would not give: {wrong}"

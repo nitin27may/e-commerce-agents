@@ -9,10 +9,10 @@
       "new_conversation": true,
       "prompt": "Show me noise-cancelling headphones under $350.",
       "fixtures": [
-        "5ddc78b92da905c2",
-        "668072f298346730",
-        "984f8121e0d100a3",
-        "8c9fa5ac58db4d09"
+        "4bd81f89da32e3dd",
+        "78213d443231ff41",
+        "793996651c4eab5d",
+        "7964563a200886d3"
       ]
     },
     {
@@ -23,10 +23,10 @@
       "new_conversation": false,
       "prompt": "Which of those has the best reviews?",
       "fixtures": [
-        "2c34caa0ed96059d",
-        "4e57dbe0d84d4016",
-        "711c9ccb110ff1d7",
-        "bc88148e86d11194"
+        "07cda11c254a3058",
+        "11e4d47aadfa4f45",
+        "28eca970b1c819fd",
+        "a5273816ad7ec35e"
       ]
     },
     {
@@ -37,11 +37,11 @@
       "new_conversation": false,
       "prompt": "Add the Sony WH-1000XM5 to my cart.",
       "fixtures": [
-        "371a9dfd27c0e68b",
-        "6a35e792100a0df2",
-        "9fbc08afd1d6c4f8",
-        "b439337794cdaecd",
-        "c8f978f4b140f6da"
+        "1bdc3abce6ca76e3",
+        "b76547d782642592",
+        "c2fe521f7249854a",
+        "d4ccd2a538d0e347",
+        "fb9c564bd1655c44"
       ]
     },
     {
@@ -52,10 +52,11 @@
       "new_conversation": true,
       "prompt": "What is the status of my Patagonia Better Sweater order?",
       "fixtures": [
-        "2737366047e91c28",
-        "caf8472c4d12ea12",
-        "e4e788b5cbe9eb17",
-        "f3ce2065730f0ea9"
+        "1dc93c1b2ef684bc",
+        "1fad0c73d5fac828",
+        "d28da87539424685",
+        "eeb23001dd1d01ae",
+        "fafa656702bf2986"
       ]
     },
     {
@@ -66,10 +67,10 @@
       "new_conversation": true,
       "prompt": "Which coupons can I use on an Electronics purchase over $100?",
       "fixtures": [
-        "33de7ddde0a9a2b6",
-        "c356716ef0644164",
-        "f77b6d3fcd6599d7",
-        "fa92c8c58e5ba9d3"
+        "167015350f19b991",
+        "2eac514a7e6da890",
+        "6f18ce15479782bc",
+        "8a17ade4091e1dee"
       ]
     },
     {
@@ -80,11 +81,11 @@
       "new_conversation": true,
       "prompt": "Is the Sony WH-1000XM5 in stock?",
       "fixtures": [
-        "63a5a51fbbb05857",
-        "c96580aecb7beace",
-        "3f172ee34d09d802",
-        "cdc6e744b9ff79d1",
-        "587f597278dc7d75"
+        "3b17a4fba2e6bd54",
+        "474f1055c78f1ed5",
+        "483008327e611c96",
+        "a703cbeadf3b7d71",
+        "c84c96cced144787"
       ]
     },
     {
@@ -120,7 +121,7 @@
       "prompt": "Is the Sony WH-1000XM5 worth its price?",
       "fixtures": [
         "070b29312836d8bb",
-        "c8164e07f365040d"
+        "2715ebea3c9006c7"
       ]
     },
     {
@@ -138,12 +139,12 @@
       "user": "alice.johnson@gmail.com",
       "mode": "tool",
       "new_conversation": true,
-      "prompt": "Find me wireless headphones under $300 with good noise cancellation",
+      "prompt": "Find me noise-cancelling wireless headphones under $300",
       "fixtures": [
-        "1a9f9be2036e38ff",
-        "0e709556904ea7be",
-        "be660f8c0617f0a3",
-        "e22b74649039d385"
+        "4525a71b8117f7de",
+        "69a8a48ab6b1be40",
+        "76190328fc6cb5b4",
+        "f9f216d30dfd3cbe"
       ]
     },
     {
@@ -154,11 +155,12 @@
       "new_conversation": true,
       "prompt": "Compare the Sony WH-1000XM5 with AirPods Max",
       "fixtures": [
-        "e84ddb1397c7abad",
-        "5ff42b99ab236955",
-        "324e9f70ec8aa9f5",
-        "fd51e6d31406f0d1",
-        "f54c025f2cc1ec33"
+        "17f684c514364dea",
+        "394be26524010909",
+        "484fe107b5aba28d",
+        "7cf5a704ea1db81b",
+        "9c0ea53946a1b01c",
+        "e28cfc1200373383"
       ]
     },
     {
@@ -169,10 +171,10 @@
       "new_conversation": true,
       "prompt": "Where's my latest order?",
       "fixtures": [
-        "352d93302e0b2432",
-        "5929faa7a80114d9",
-        "6a6bd9bd6d4d651a",
-        "f9fd48ff980ae3af"
+        "175310c60c9b9282",
+        "5e28a35c0e259c37",
+        "65c5085ba4873c23",
+        "97d27bf545df18e4"
       ]
     },
     {
@@ -183,11 +185,10 @@
       "new_conversation": true,
       "prompt": "I want to return my last order",
       "fixtures": [
-        "125f69a1b78575d1",
-        "2788c7221ce47ebe",
-        "3c8e1b0a64ab928b",
-        "acb6e19b14c4ab0d",
-        "f46b6f44ecce755a"
+        "146a70182917e1a3",
+        "18d13431eaed9028",
+        "b9dd9380893c005f",
+        "d8aead457b72d642"
       ]
     },
     {
@@ -196,11 +197,11 @@
       "user": "alice.johnson@gmail.com",
       "mode": "tool",
       "new_conversation": false,
-      "prompt": "The cooler stopped working properly. Please refund it to my original payment method.",
+      "prompt": "None of it suits me after all. Please return the whole order and refund it to my original payment method.",
       "fixtures": [
-        "61be4e3aa2b62069",
-        "791cade7422644e0",
-        "f65cdf82c588fb36"
+        "32070d4e9bbceb21",
+        "5ccfc3a75cee55c5",
+        "822cc2c8e20d53b7"
       ]
     },
     {
@@ -211,9 +212,9 @@
       "new_conversation": false,
       "prompt": "Yes, please go ahead.",
       "fixtures": [
-        "336ffd41f253c04d",
-        "9bb13df92d64c637",
-        "c0aa2784f0f48f1b"
+        "5e2edb8f80c10624",
+        "a639d023e9904508",
+        "e32ef241ea605d7c"
       ]
     },
     {
@@ -224,12 +225,11 @@
       "new_conversation": true,
       "prompt": "Is the Logitech MX Master 3S a good deal right now?",
       "fixtures": [
-        "2ea567f9bd7ed188",
-        "3291356d620a8469",
-        "3fdb93d036eb1b7b",
-        "5612e24a23c2ad6e",
-        "8177ade9f9f044df",
-        "894a20b30b100162"
+        "1327ac9b4c1ca346",
+        "7de957ce87ac1419",
+        "8664b14a5cdc06e5",
+        "cc1594482337fbe8",
+        "f098dcd97ff839ac"
       ]
     },
     {
@@ -240,11 +240,11 @@
       "new_conversation": true,
       "prompt": "What do people think about the Dyson V15?",
       "fixtures": [
-        "1fb5cf25afad36a4",
-        "21c0156b209f7094",
-        "4f8f9f6e075666d9",
-        "8b268087fa8a8425",
-        "f996c67ed55cab18"
+        "720d7eb019880bca",
+        "844c980e674d9999",
+        "ae5df2c52805ba52",
+        "b7a42718b6ec66ec",
+        "c07d5d16f4fc63d8"
       ]
     },
     {
@@ -255,12 +255,12 @@
       "new_conversation": true,
       "prompt": "Is the Dyson V15 Detect in stock?",
       "fixtures": [
-        "229ccf55c3ef1be7",
-        "d36cdda69df4cc0d",
-        "06e09ee36d3915d8",
-        "688fc7a828bfcbcf",
-        "ea16d7ae850df466",
-        "f9d7b6b955a3ed02"
+        "2057231d9c8f85f8",
+        "31185b60c7daf123",
+        "3951f8212db83360",
+        "4fc5cdc97aec20e8",
+        "75452bb44fa424ff",
+        "907257402968e997"
       ]
     },
     {
@@ -271,13 +271,13 @@
       "new_conversation": true,
       "prompt": "Return my jacket and find me a warmer one under $200",
       "fixtures": [
-        "15b9f88f6520dc58",
-        "7b35d9da3d92d333",
-        "a39c36aa279e41ed",
-        "aa89b08957732501",
-        "7ca588fd9f0b748f",
-        "011af663c6bc47f8",
-        "3dda72d54627e195"
+        "0d73d4b6a31722ef",
+        "2f5a165f8c48a321",
+        "6142c12c26c6ad15",
+        "73ff11465f71b830",
+        "9e79a6d56345b194",
+        "be839b8f0b4f61d5",
+        "fd0ff4f322ae21e9"
       ]
     },
     {
@@ -310,10 +310,10 @@
       "new_conversation": true,
       "prompt": "What Allbirds products do you have?",
       "fixtures": [
-        "dd7f9a9bb6fb8602",
-        "862818fc416754c2",
-        "fd4cca5b2061bb1a",
-        "eb71cb80b51809e3"
+        "2e5ed9dc949f81d9",
+        "5a90a6a7511dc54f",
+        "87fddbc34bc750ff",
+        "c7d2f51ac02cb017"
       ]
     },
     {
@@ -324,7 +324,7 @@
       "new_conversation": false,
       "prompt": "How much are they?",
       "fixtures": [
-        "7039a2f8042f4df9"
+        "a0cf46d72f855740"
       ]
     },
     {
@@ -353,7 +353,7 @@
       "new_conversation": true,
       "prompt": "Hello, what can you help me with?",
       "fixtures": [
-        "483482f47f17a3cc"
+        "3afc94f19cecce17"
       ]
     },
     {
@@ -364,7 +364,7 @@
       "new_conversation": true,
       "prompt": "Hello, what can you help me with?",
       "fixtures": [
-        "a8fc949a6bafaf3a"
+        "120c90d42a3a3b88"
       ]
     },
     {
@@ -375,7 +375,7 @@
       "new_conversation": true,
       "prompt": "Hello, what can you help me with?",
       "fixtures": [
-        "de9765e3c46676cc"
+        "d2c48be97a12d75b"
       ]
     },
     {
@@ -386,7 +386,7 @@
       "new_conversation": true,
       "prompt": "Hello, what can you help me with?",
       "fixtures": [
-        "a6ddfa507e442634"
+        "231b5fcc9e0980ce"
       ]
     },
     {
@@ -397,7 +397,7 @@
       "new_conversation": true,
       "prompt": "Hello, what can you help me with?",
       "fixtures": [
-        "132b4661762ac408"
+        "80fd2faec256e987"
       ]
     },
     {
@@ -408,7 +408,7 @@
       "new_conversation": true,
       "prompt": "My name for this chat is Wombat. Remember it.",
       "fixtures": [
-        "9c7aed78ffcbd7b8"
+        "b970d2acc421fbc7"
       ]
     },
     {
@@ -419,10 +419,10 @@
       "new_conversation": false,
       "prompt": "What noise cancelling headphones do you have?",
       "fixtures": [
-        "d24a460ac8fb99d5",
-        "11af08c9fca7388b",
-        "e5c9c1d28cf071df",
-        "e8ac4b4f0cbe65fa"
+        "0bd16c5ec7dc480b",
+        "bd25f8bfdd5384d2",
+        "ced0a0abda179bc7",
+        "d7021e6989496be0"
       ]
     },
     {
@@ -433,7 +433,7 @@
       "new_conversation": false,
       "prompt": "What name did I give you at the start of this chat?",
       "fixtures": [
-        "23f6e4f1ec102f72"
+        "3c71407b0f9619e1"
       ]
     },
     {
@@ -444,11 +444,10 @@
       "new_conversation": true,
       "prompt": "Find the Sony WH-1000XM5 headphones",
       "fixtures": [
-        "3649594130d42a1e",
-        "f99768c1bc295c43",
-        "c981f6a6dfd0d6ec",
-        "d6abbb8b6a878d04",
-        "dece21da8ef96324"
+        "4e487fa239c1534f",
+        "8f5c3f0ce252bf29",
+        "b31522f55008650e",
+        "bba6a93b21bb97bb"
       ]
     },
     {
@@ -459,10 +458,10 @@
       "new_conversation": false,
       "prompt": "What's the sentiment on its reviews? Show me the rating breakdown and how it's trended over the last 6 months.",
       "fixtures": [
-        "4f949b5a738540ce",
-        "5cd9a5b932593eb0",
-        "99ee3986750931fe",
-        "bde6ebc0720d1ed4"
+        "05f24e2fb4e24c08",
+        "32186b34e3624be9",
+        "439faa46a417af9b",
+        "ad83f8a7df638d4b"
       ]
     },
     {
@@ -473,11 +472,11 @@
       "new_conversation": true,
       "prompt": "Find the Sony WH-1000XM5 headphones",
       "fixtures": [
-        "fc2300d3d8907f5f",
-        "cab9db5b7b776c1f",
-        "d524b70b93b1aaaf",
-        "dc55ec3c2fe27159",
-        "79b8336b29665502"
+        "07cf1c203a81b45c",
+        "20eb76dde42e707a",
+        "710b1340cf8e1b22",
+        "88db5ba7b7f634c6",
+        "bb2bd256526b202b"
       ]
     },
     {
@@ -488,10 +487,10 @@
       "new_conversation": false,
       "prompt": "Is it in stock? Show me the breakdown by warehouse.",
       "fixtures": [
-        "4477367c59bc6201",
-        "5b0139099bcb1dbe",
-        "f65be4fea96b9919",
-        "cc84a3b5dc4dc911"
+        "35cad15053ee0f53",
+        "7d309637aaa9a289",
+        "a5a269ed6504fa00",
+        "e037722935010bb4"
       ]
     },
     {
@@ -502,10 +501,9 @@
       "new_conversation": true,
       "prompt": "What deals and promotions are currently active on the platform?",
       "fixtures": [
-        "291d744764ccd7e8",
-        "445b757ab11c8680",
-        "9a5773aaf0b69c63",
-        "e3af07bfc6eff5fd"
+        "ac54e7a1d29d7d27",
+        "b9091b112af3a4d2",
+        "ca6d8c64ce0db395"
       ]
     },
     {
@@ -516,11 +514,11 @@
       "new_conversation": true,
       "prompt": "Find the Sony WH-1000XM5 headphones",
       "fixtures": [
-        "987412d628a8fbaf",
-        "a4281b336be3613e",
-        "98011585f2d9f6ad",
-        "b36f02ff543ce2d4",
-        "0913ee19530e4865"
+        "0800f363b5724836",
+        "1ae4ddb55717cdaf",
+        "750b2daabf480ac3",
+        "dc6d52dec280ca37",
+        "eed1ee6b0af7e7aa"
       ]
     },
     {
@@ -531,10 +529,10 @@
       "new_conversation": false,
       "prompt": "How much would it cost to ship this to the east region, and what are my carrier options?",
       "fixtures": [
-        "9ce056cd9e2e648d",
-        "5b232ab3af17ed0c",
-        "7a51dcb1f403fe12",
-        "43ef304e2f1427b3"
+        "6b1db18a5794118c",
+        "a8ed1c197787ca4c",
+        "b8a0d56fe83cb267",
+        "bfba813a75973b81"
       ]
     },
     {
@@ -545,10 +543,10 @@
       "new_conversation": true,
       "prompt": "Find me wireless headphones",
       "fixtures": [
-        "3cc772bc2651ddf1",
-        "6392c1abb6bf8893",
-        "9afce5b9991b74c8",
-        "b2c3c37ba526a972"
+        "2ef69915761e3ca1",
+        "30c4587d0d071af7",
+        "b2c3c37ba526a972",
+        "cc203150d2b4b1bb"
       ]
     },
     {
@@ -559,10 +557,10 @@
       "new_conversation": true,
       "prompt": "Where is my latest order?",
       "fixtures": [
-        "6c71c5c9837b7357",
-        "adf4e57f946d0a12",
-        "b6e6f0bb9ea7b104",
-        "eeda92ca86078f30"
+        "0873106017eea991",
+        "374cc14a1cb05531",
+        "62c269cf4f8bd984",
+        "786e354e4fca85cf"
       ]
     },
     {
@@ -573,10 +571,10 @@
       "new_conversation": true,
       "prompt": "Show me wireless headphones under $400",
       "fixtures": [
-        "f89b7834a3f758e5",
-        "9282770240bd89db",
-        "3efa67239f76506c",
-        "d9b11d25fdd747cb"
+        "4d71b105a195fdd7",
+        "a3ad27a5cafa65f4",
+        "a6029d5ad2d49a9f",
+        "e05ebf5d53d60301"
       ]
     },
     {
@@ -587,19 +585,16 @@
       "new_conversation": true,
       "prompt": "Is the Sony WH-1000XM5 a good deal right now, and is it in stock?",
       "fixtures": [
-        "08fb7894f4840fc6",
-        "2c5c43e8d72ae9d7",
-        "436583310c00c7bc",
-        "474e0075bb1fd485",
-        "4cb3161e84a2303e",
-        "74123335547a422c",
-        "752c7d87e3989fcc",
-        "8892694f29f77fd5",
-        "aac694f520fe8064",
-        "ac7623b42cbea013",
-        "d851241a09afcf08",
-        "e11fcc3d663e3450",
-        "eada112dc36d1456"
+        "16c1fd4edce8f092",
+        "3271dcce137ef5df",
+        "3be56482f82740ca",
+        "6336260049ec4525",
+        "7636c20bc6bde54a",
+        "78cddd9b501478a7",
+        "7dfdc2b44b2e6cbe",
+        "a4c957060b649706",
+        "bd85d6d4daa39201",
+        "e1dfdee83990a8f1"
       ]
     },
     {
@@ -610,15 +605,15 @@
       "new_conversation": true,
       "prompt": "Is the Sony WH-1000XM5 a good deal right now, and is it in stock?",
       "fixtures": [
-        "08371eab500592dc",
-        "09beb3048df76295",
-        "25d3e9f36b13f666",
-        "2b1a23c607f92589",
-        "3c7c3c7e51d3a73a",
-        "a42dadaf7ad4da9a",
-        "ad1f92e244a6c09c",
-        "b9b2b822cb20e0e8",
-        "d9b5e4b40d3bb1a8"
+        "009c7750c417f3db",
+        "2425f33b90c974ae",
+        "3a98919b5983d2b6",
+        "5b3459d241fd76ca",
+        "631405c54c34f1f1",
+        "67fef64b04c9314f",
+        "ae2e270206ccc7c0",
+        "d7783aa15ea6147c",
+        "df7efcfee838fea8"
       ]
     }
   ]

@@ -8,7 +8,7 @@
       ],
       "id": "coupons",
       "mode": "tool",
-      "preview": "Here are the best coupons you can use for an Electronics purchase over $100. As a Silver loyalty tier member, you'll also get an extra 5% off at checkout!\n\n```pricing\n{\n  \"coupons\": [\n    {\n      \"code\": \"TECHSAVE\",\n      \"description\": \"15% off Electronics\",\n      \"discount_type\": \"percentage\",\n      \"discount_value\": 15.0,\n      \"min_spend\": 100.0,\n      \"max_discount\": 75.0,\n      \"valid_until\": \"2027-11-24T03:17:59.427814+00:00\",\n      \"applicable_categories\": [\"Electronics\"]\n    }\n  ],\n  \"promotions\": [],\n  \"loyalty_tier\": \"silver\",\n  \"loyalty_discount_pct\": 5\n}\n```\n\nThe TECHSAVE coupon gives you 15% off Electronics orders over $100 (up to $75 off), and your Silver tier adds another 5% discount. Let me know your cart details if you'd like to see your exact savings!",
+      "preview": "Here are all currently available coupons and promotions that can be applied to an Electronics purchase over $100 for your silver loyalty tier. The best coupon for Electronics is TECHSAVE, which gives you 15% off on purchases over $100 (up to $75 off). You also qualify for a 5% silver loyalty discount, and there’s a Tech Bundle Deal if you buy select electronics together.\n\n```pricing\n{\n  \"coupons\": [\n    {\"code\": \"TECHSAVE\", \"description\": \"15% off Electronics\", \"discount_type\": \"percentage\", \"discount_value\": 15.0, \"min_spend\": 100.0, \"max_discount\": 75.0, \"valid_until\": \"2027-11-28T03:46:22.708857+00:00\", \"applicable_categories\": [\"Electronics\"]},\n    {\"code\": \"WELCOME10\", \"description\": \"10% off your first order\", \"discount_type\": \"percentage\", \"discount_value\": 10.0, \"min_spend\": null, \"max_discount\": 50.0, \"valid_until\": \"2027-11-28T03:46:22.708857+00:00\", \"applicable_categories\": null},\n    {\"code\": \"BUNDLE5\", \"description\": \"$5 off any order\", \"discount_type\": \"fixed\", \"discount_value\": 5.0, \"min_spend\": null, \"max_discount\": null, \"valid_until\": \"2027-11-28T03:46:22.708857+00:00\", \"applicable_categories\": null}\n  ],\n  \"promotions\": [\n    {\"name\": \"Tech Bundle Deal\", \"type\": \"bundle\", \"rules\": {\"products\": [\"Sony WH-1000XM5\", \"Samsung T7 Shield SSD 2TB\"], \"discount_pct\": 10}, \"start_date\": \"2026-11-23T03:46:22.765507+00:00\", \"end_date\": \"2026-12-28T03:46:22.765507+00:00\"}\n  ]\n}\n```\n\nLet me know which Electronics products you’re considering, and I can help optimize your cart for maximum savings!",
       "prompt": "Which coupons can I use on an Electronics purchase over $100?",
       "source": "recorded",
       "steps": [
@@ -27,7 +27,7 @@
           "tool_name": "get_active_deals"
         }
       ],
-      "text": "Hi Tour Visitor! For Electronics purchases over $100, you can use the TECHSAVE coupon for 15% off (up to $75 off), and your Silver loyalty tier gives you an extra 5% discount at checkout.\n\nHere are the details:\n\n```pricing\n{\n  \"coupons\": [\n    {\n      \"code\": \"TECHSAVE\",\n      \"description\": \"15% off Electronics\",\n      \"discount_type\": \"percentage\",\n      \"discount_value\": 15.0,\n      \"min_spend\": 100.0,\n      \"max_discount\": 75.0,\n      \"valid_until\": \"2027-11-24T03:17:59.427814+00:00\",\n      \"applicable_categories\": [\"Electronics\"]\n    }\n  ],\n  \"promotions\": [],\n  \"loyalty_tier\": \"silver\",\n  \"loyalty_discount_pct\": 5\n}\n```\n\nWould you like to see your savings on a specific item or your cart? Let me know if you want to apply the coupon or need help with checkout!"
+      "text": "Hi Tour Visitor! Here are the coupons and promotions you can use on an Electronics purchase over $100:\n\n```pricing\n{\n  \"coupons\": [\n    {\"code\": \"TECHSAVE\", \"description\": \"15% off Electronics\", \"discount_type\": \"percentage\", \"discount_value\": 15.0, \"min_spend\": 100.0, \"max_discount\": 75.0, \"valid_until\": \"2027-11-28T03:46:22.708857+00:00\", \"applicable_categories\": [\"Electronics\"]},\n    {\"code\": \"WELCOME10\", \"description\": \"10% off your first order\", \"discount_type\": \"percentage\", \"discount_value\": 10.0, \"min_spend\": null, \"max_discount\": 50.0, \"valid_until\": \"2027-11-28T03:46:22.708857+00:00\", \"applicable_categories\": null},\n    {\"code\": \"BUNDLE5\", \"description\": \"$5 off any order\", \"discount_type\": \"fixed\", \"discount_value\": 5.0, \"min_spend\": null, \"max_discount\": null, \"valid_until\": \"2027-11-28T03:46:22.708857+00:00\", \"applicable_categories\": null}\n  ],\n  \"promotions\": [\n    {\"name\": \"Tech Bundle Deal\", \"type\": \"bundle\", \"rules\": {\"products\": [\"Sony WH-1000XM5\", \"Samsung T7 Shield SSD 2TB\"], \"discount_pct\": 10}, \"start_date\": \"2026-11-23T03:46:22.765507+00:00\", \"end_date\": \"2026-12-28T03:46:22.765507+00:00\"}\n  ]\n}\n```\n\n- The best coupon for Electronics is TECHSAVE: 15% off purchases over $100 (up to $75 off).\n- You also get a 5% silver loyalty discount.\n- There’s a Tech Bundle Deal if you buy select electronics together.\n\nLet me know which products you’re interested in, and I can help you get the best deal!"
     },
     "follow-up-compare": {
       "agents_involved": [
@@ -36,7 +36,7 @@
       ],
       "id": "follow-up-compare",
       "mode": "tool",
-      "preview": "The Sony WH-1000XM5 has a positive overall sentiment from reviewers, with an average rating of 3.93 out of 5 based on 15 reviews. Most ratings are 4 or 5 stars, but there are a few lower ratings as well. Here’s a summary of the review sentiment:\n\n```sentiment\n{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"product_name\": \"Sony WH-1000XM5\",\n  \"overall_sentiment\": \"positive\",\n  \"average_rating\": 3.93,\n  \"total_reviews\": 15,\n  \"rating_distribution\": {\"5\": 5, \"4\": 7, \"3\": 1, \"2\": 1, \"1\": 1},\n  \"pros\": [\"Great\", \"Perfect\", \"Excellent\", \"Fast\", \"Quality\"],\n  \"cons\": [\"Disappointed\"]\n}\n```\n\nStrengths mentioned include quality, performance, and speed. The main negative is some disappointment from a few users. Would you like a deeper dive into specific topics like noise cancellation, comfort, or durability?",
+      "preview": "The Sony WH-1000XM5 has an overall positive review sentiment with an average rating of 3.93 from 15 reviews. Most ratings are 4 or 5 stars, with a few lower ratings. Here’s a breakdown of the sentiment and ratings:\n\n```sentiment\n{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"product_name\": \"Sony WH-1000XM5\",\n  \"overall_sentiment\": \"positive\",\n  \"average_rating\": 3.93,\n  \"total_reviews\": 15,\n  \"rating_distribution\": {\"5\": 5, \"4\": 7, \"3\": 1, \"2\": 1, \"1\": 1},\n  \"pros\": [\"Great\", \"Perfect\", \"Excellent\", \"Fast\", \"Quality\"],\n  \"cons\": [\"Disappointed\"]\n}\n```\n\nWould you like a topic breakdown (e.g., quality, comfort, battery), trend over time, or to check for suspicious reviews?",
       "prompt": "Which of those has the best reviews?",
       "source": "recorded",
       "steps": [
@@ -57,7 +57,7 @@
           "tool_name": "analyze_sentiment"
         }
       ],
-      "text": "Here’s a summary of the reviews for the Sony WH-1000XM5 noise-cancelling headphones:\n\n```sentiment\n{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"product_name\": \"Sony WH-1000XM5\",\n  \"overall_sentiment\": \"positive\",\n  \"average_rating\": 3.93,\n  \"total_reviews\": 15,\n  \"rating_distribution\": {\"5\": 5, \"4\": 7, \"3\": 1, \"2\": 1, \"1\": 1},\n  \"pros\": [\"Great\", \"Perfect\", \"Excellent\", \"Fast\", \"Quality\"],\n  \"cons\": [\"Disappointed\"]\n}\n```\n\nMost reviewers praise the quality and performance, though a few mention disappointment. Would you like to see more detailed feedback or compare with other models?"
+      "text": "Here’s a summary of the reviews for the Sony WH-1000XM5 noise-cancelling headphones:\n\n```sentiment\n{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"product_name\": \"Sony WH-1000XM5\",\n  \"overall_sentiment\": \"positive\",\n  \"average_rating\": 3.93,\n  \"total_reviews\": 15,\n  \"rating_distribution\": {\"5\": 5, \"4\": 7, \"3\": 1, \"2\": 1, \"1\": 1},\n  \"pros\": [\"Great\", \"Perfect\", \"Excellent\", \"Fast\", \"Quality\"],\n  \"cons\": [\"Disappointed\"]\n}\n```\n\nMost customers rate them 4 or 5 stars, highlighting great quality and performance. Would you like to see more detailed review topics, trends, or compare reviews with another model?"
     },
     "group-chat": {
       "agents_involved": [
@@ -74,7 +74,7 @@
       ],
       "prompt": "Is the Sony WH-1000XM5 worth its price?",
       "source": "recorded",
-      "text": "Round-table on: Is the Sony WH-1000XM5 worth its price?\n\n**Value:** From a pricing and value standpoint, the WH-1000XM5 sits at the premium end of the market, but its feature set—top-tier noise cancellation, advanced audio codecs, and robust build quality—justifies the cost for users prioritizing superior sound and comfort. If you're comparing to mid-range alternatives, the extra spend buys tangible performance upgrades, making it a strong value for those who will use those features regularly.\n\n**Quality:** Review consensus often highlights the WH-1000XM5's improved durability and comfortable, lightweight design, which stand out in daily use. Long-term owners report reliable performance and minimal wear, suggesting Sony’s manufacturing quality matches its premium pricing."
+      "text": "Round-table on: Is the Sony WH-1000XM5 worth its price?\n\n**Value:** From a value perspective, the WH-1000XM5 commands a premium price largely due to its industry-leading noise cancellation and sound quality. While there are less expensive options with decent performance, the XM5’s features and build quality can justify the cost for users prioritizing top-tier audio and comfort in daily or travel use.\n\n**Quality:** From a build-quality standpoint, reviews consistently highlight the XM5’s sturdy yet lightweight construction, with premium materials that feel durable and comfortable for long hours. User feedback also points to reliable hinges and soft ear cushions, reinforcing the perception that your investment goes toward a well-crafted product likely to stand up to frequent use."
     },
     "handoff-order": {
       "agents_involved": [
@@ -117,7 +117,7 @@
           "tool_name": "get_order_tracking"
         }
       ],
-      "text": "Your Patagonia Better Sweater order has shipped and is currently at the \"Local Hub\" with Standard Shipping. The latest update was on November 19, 2026. While the exact delivery date isn't specified, it should arrive soon based on standard shipping times.\n\nYou can track your order using the tracking number TRK492655486 with the carrier listed below.\n\n```order\n{\"id\":\"b17cd72d-3b8b-57d3-882a-03b2b3b91747\",\"status\":\"shipped\",\"total\":139.0,\"date\":\"2026-11-18\",\"items\":[{\"name\":\"Patagonia Better Sweater\",\"quantity\":1,\"unit_price\":139.0,\"category\":\"Clothing\",\"brand\":\"Patagonia\"}],\"tracking\":\"TRK492655486\",\"carrier\":\"Standard Shipping\",\"shipping_address\":\"742 Evergreen Terrace, Springfield, OR 97477, US\"}\n```\n\nWould you like a direct tracking link or more updates as your order progresses?"
+      "text": "Your Patagonia Better Sweater order has shipped and is currently at the \"Local Hub\" as of November 23, 2026. The carrier is Standard Shipping, and your tracking number is TRK492655486. The estimated delivery date isn't specified, but since it's already shipped and at the local hub, it should arrive soon.\n\nYou can use the tracking number with the carrier for the most up-to-date delivery estimate.\n\n```order\n{\"id\":\"b17cd72d-3b8b-57d3-882a-03b2b3b91747\",\"status\":\"shipped\",\"total\":139.0,\"date\":\"2026-11-22\",\"items\":[{\"name\":\"Patagonia Better Sweater\",\"quantity\":1,\"unit_price\":139.0,\"category\":\"Clothing\",\"brand\":\"Patagonia\"}],\"tracking\":\"TRK492655486\",\"carrier\":\"Standard Shipping\",\"shipping_address\":\"742 Evergreen Terrace, Springfield, OR 97477, US\"}\n```\n\nWould you like a direct tracking link or need help with anything else regarding this order?"
     },
     "order-status": {
       "agents_involved": [
@@ -126,7 +126,7 @@
       ],
       "id": "order-status",
       "mode": "tool",
-      "preview": "Your order containing the Patagonia Better Sweater is order b17cd72d-3b8b-57d3-882a-03b2b3b91747. Its current status is \"shipped\" and it's on its way to you via Standard Shipping.\n\nHere are the details:\n\n```order\n{\"id\":\"b17cd72d-3b8b-57d3-882a-03b2b3b91747\",\"status\":\"shipped\",\"total\":139.0,\"date\":\"2026-11-18\",\"items\":[{\"name\":\"Patagonia Better Sweater\",\"quantity\":1,\"unit_price\":139.0,\"category\":\"Clothing\",\"brand\":\"Patagonia\"}],\"tracking\":\"TRK492655486\",\"carrier\":\"Standard Shipping\",\"shipping_address\":\"742 Evergreen Terrace, Springfield, OR 97477, US\"}\n```\n\nWould you like to track this shipment or need more details?",
+      "preview": "Your Patagonia Better Sweater order is currently in \"shipped\" status. It was shipped via Standard Shipping, and the last update shows it left the Local Hub. Here are the details and tracking info:\n\n```order\n{\"id\":\"b17cd72d-3b8b-57d3-882a-03b2b3b91747\",\"status\":\"shipped\",\"total\":139.0,\"date\":\"2026-11-22\",\"items\":[{\"name\":\"Patagonia Better Sweater\",\"quantity\":1,\"unit_price\":139.0,\"category\":\"Clothing\",\"brand\":\"Patagonia\"}],\"tracking\":\"TRK492655486\",\"carrier\":\"Standard Shipping\",\"shipping_address\":\"742 Evergreen Terrace, Springfield, OR 97477, US\"}\n```\n\nYou can use the tracking number TRK492655486 with Standard Shipping to follow your package's progress. If you need more detailed tracking updates or have any other questions, let me know!",
       "prompt": "What is the status of my Patagonia Better Sweater order?",
       "source": "recorded",
       "steps": [
@@ -153,9 +153,17 @@
             "order_id": "b17cd72d-3b8b-57d3-882a-03b2b3b91747"
           },
           "tool_name": "get_order_details"
+        },
+        {
+          "agent": "order-management",
+          "status": "success",
+          "tool_input": {
+            "order_id": "b17cd72d-3b8b-57d3-882a-03b2b3b91747"
+          },
+          "tool_name": "get_order_tracking"
         }
       ],
-      "text": "Hi Tour Visitor! Your order for the Patagonia Better Sweater has been shipped and is on its way to you via Standard Shipping. Here are the details:\n\n```order\n{\"id\":\"b17cd72d-3b8b-57d3-882a-03b2b3b91747\",\"status\":\"shipped\",\"total\":139.0,\"date\":\"2026-11-18\",\"items\":[{\"name\":\"Patagonia Better Sweater\",\"quantity\":1,\"unit_price\":139.0,\"category\":\"Clothing\",\"brand\":\"Patagonia\"}],\"tracking\":\"TRK492655486\",\"carrier\":\"Standard Shipping\",\"shipping_address\":\"742 Evergreen Terrace, Springfield, OR 97477, US\"}\n```\n\nWould you like to track your shipment or need more information about your order?"
+      "text": "Hi Tour Visitor! Your Patagonia Better Sweater order has shipped and is on its way to you. Here are the details:\n\n```order\n{\"id\":\"b17cd72d-3b8b-57d3-882a-03b2b3b91747\",\"status\":\"shipped\",\"total\":139.0,\"date\":\"2026-11-22\",\"items\":[{\"name\":\"Patagonia Better Sweater\",\"quantity\":1,\"unit_price\":139.0,\"category\":\"Clothing\",\"brand\":\"Patagonia\"}],\"tracking\":\"TRK492655486\",\"carrier\":\"Standard Shipping\",\"shipping_address\":\"742 Evergreen Terrace, Springfield, OR 97477, US\"}\n```\n\nYou can track your package using the tracking number TRK492655486 with Standard Shipping. If you need more updates or have any other questions, just let me know!"
     },
     "pre-purchase": {
       "agents_involved": [
@@ -200,7 +208,7 @@
       ],
       "id": "search-headphones",
       "mode": "tool",
-      "preview": "Here’s a top option for noise-cancelling headphones under $350. The Sony WH-1000XM5 stands out for its excellent noise cancellation, long battery life, and multipoint connectivity. It’s currently on sale, making it a great deal.\n\n- Price: $299.99 (originally $349.99)\n- Rating: 4.7 (15 reviews)\n- Description: Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\n\nLet me know if you’d like to see more options or compare specs!\n\n```product\n{\"name\": \"Sony WH-1000XM5\", \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}\n```",
+      "preview": "Here's a top pick for noise-cancelling headphones under $350. The Sony WH-1000XM5 stands out for its premium features, including excellent noise cancellation, long battery life, and multipoint connectivity. It's currently on sale, making it a great deal.\n\nLet me know if you'd like to see more options or compare with other models!\n\n```product\n{\"name\": \"Sony WH-1000XM5\", \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 3.93, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}\n```\n\nWould you like more details or to compare this with other headphones?",
       "prompt": "Show me noise-cancelling headphones under $350.",
       "source": "recorded",
       "steps": [
@@ -223,7 +231,7 @@
           "tool_name": "search_products"
         }
       ],
-      "text": "Hi Tour Visitor! Here’s a top pick for noise-cancelling headphones under $350. The Sony WH-1000XM5 is highly rated and currently on sale.\n\n```product\n{\"name\": \"Sony WH-1000XM5\", \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}\n```\n\nWould you like to see more options or compare features?"
+      "text": "Hi Tour Visitor! Here’s a top pick for noise-cancelling headphones under $350:\n\n```product\n{\"name\": \"Sony WH-1000XM5\", \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 3.93, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}\n```\n\nWould you like to see more options or compare this with other models?"
     },
     "stock": {
       "agents_involved": [
@@ -232,7 +240,7 @@
       ],
       "id": "stock",
       "mode": "tool",
-      "preview": "The Sony WH-1000XM5 headphones are currently in stock and available for immediate shipping. Here are the details on warehouse availability and shipping options to the east region:\n\n```inventory\n{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"warehouses\": [\n    {\"warehouse\": \"East Coast Warehouse\", \"region\": \"east\", \"quantity\": 168, \"low_stock\": false},\n    {\"warehouse\": \"Central Warehouse\", \"region\": \"central\", \"quantity\": 33, \"low_stock\": false},\n    {\"warehouse\": \"West Coast Warehouse\", \"region\": \"west\", \"quantity\": 2, \"low_stock\": true}\n  ],\n  \"upcoming_restocks\": [\n    {\"warehouse\": \"West Coast Warehouse\", \"expected_quantity\": 100, \"expected_date\": \"2026-12-01\"}\n  ],\n  \"ships_from\": {\"warehouse\": \"East Coast Warehouse\", \"region\": \"east\", \"quantity_available\": 168},\n  \"shipping_options\": [\n    {\"carrier\": \"Standard Shipping\", \"speed_tier\": \"standard\", \"price\": 5.99, \"delivery_window\": \"5-7 business days\"},\n    {\"carrier\": \"Express Shipping\", \"speed_tier\": \"express\", \"price\": 14.99, \"delivery_window\": \"2-3 business days\"},\n    {\"carrier\": \"Overnight Shipping\", \"speed_tier\": \"overnight\", \"price\": 29.99, \"delivery_window\": \"1-1 business days\"}\n  ]\n}\n```\n\nYou can select from Standard, Express, or Overnight shipping. The best value is Standard Shipping at $5.99 (5-7 business days), while the fastest is Overnight Shipping at $29.99 (1 business day). Let me know if you’d like to proceed with an order or need shipping estimates to a different region!",
+      "preview": "The Sony WH-1000XM5 headphones are currently in stock and available for purchase.\n\n```inventory\n{\"product_id\":\"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\"in_stock\":true,\"total_quantity\":203,\"warehouses\":[{\"warehouse\":\"Central Warehouse\",\"region\":\"central\",\"quantity\":33,\"low_stock\":false},{\"warehouse\":\"East Coast Warehouse\",\"region\":\"east\",\"quantity\":168,\"low_stock\":false},{\"warehouse\":\"West Coast Warehouse\",\"region\":\"west\",\"quantity\":2,\"low_stock\":true}]}\n```\nLet me know if you’d like a shipping estimate or want to proceed with your purchase.",
       "prompt": "Is the Sony WH-1000XM5 in stock?",
       "source": "recorded",
       "steps": [
@@ -258,19 +266,10 @@
           "tool_input": {
             "product_id": "dc9e2baa-8182-58f8-9df1-97d049426ba1"
           },
-          "tool_name": "get_warehouse_availability"
-        },
-        {
-          "agent": "inventory-fulfillment",
-          "status": "success",
-          "tool_input": {
-            "destination_region": "east",
-            "product_id": "dc9e2baa-8182-58f8-9df1-97d049426ba1"
-          },
-          "tool_name": "estimate_shipping"
+          "tool_name": "check_stock"
         }
       ],
-      "text": "Hi Tour Visitor! The Sony WH-1000XM5 headphones are currently in stock and ready for immediate shipping. Here’s a breakdown of warehouse availability and shipping options:\n\n```inventory\n{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"warehouses\": [\n    {\"warehouse\": \"East Coast Warehouse\", \"region\": \"east\", \"quantity\": 168, \"low_stock\": false},\n    {\"warehouse\": \"Central Warehouse\", \"region\": \"central\", \"quantity\": 33, \"low_stock\": false},\n    {\"warehouse\": \"West Coast Warehouse\", \"region\": \"west\", \"quantity\": 2, \"low_stock\": true}\n  ],\n  \"upcoming_restocks\": [\n    {\"warehouse\": \"West Coast Warehouse\", \"expected_quantity\": 100, \"expected_date\": \"2026-12-01\"}\n  ],\n  \"ships_from\": {\"warehouse\": \"East Coast Warehouse\", \"region\": \"east\", \"quantity_available\": 168},\n  \"shipping_options\": [\n    {\"carrier\": \"Standard Shipping\", \"speed_tier\": \"standard\", \"price\": 5.99, \"delivery_window\": \"5-7 business days\"},\n    {\"carrier\": \"Express Shipping\", \"speed_tier\": \"express\", \"price\": 14.99, \"delivery_window\": \"2-3 business days\"},\n    {\"carrier\": \"Overnight Shipping\", \"speed_tier\": \"overnight\", \"price\": 29.99, \"delivery_window\": \"1-1 business days\"}\n  ]\n}\n```\n\nWould you like to add these headphones to your cart or get a shipping estimate for your address? Let me know how you’d like to proceed!"
+      "text": "Hi Tour Visitor! The Sony WH-1000XM5 headphones are currently in stock and available for purchase.\n\n```inventory\n{\"product_id\":\"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\"in_stock\":true,\"total_quantity\":203,\"warehouses\":[{\"warehouse\":\"Central Warehouse\",\"region\":\"central\",\"quantity\":33,\"low_stock\":false},{\"warehouse\":\"East Coast Warehouse\",\"region\":\"east\",\"quantity\":168,\"low_stock\":false},{\"warehouse\":\"West Coast Warehouse\",\"region\":\"west\",\"quantity\":2,\"low_stock\":true}]}\n```\n\nWould you like a shipping estimate or want to add them to your cart?"
     }
   },
   "graphs": {
@@ -390,7 +389,7 @@
       },
       "carrier": "Standard Shipping",
       "coupon": null,
-      "date": "2026-11-18",
+      "date": "2026-11-22",
       "discount": 0,
       "id": "b17cd72d-3b8b-57d3-882a-03b2b3b91747",
       "items": [
@@ -1454,14 +1453,14 @@
       "total_stock": 203,
       "warehouses": [
         {
-          "name": "East Coast Warehouse",
-          "quantity": 168,
-          "region": "east"
-        },
-        {
           "name": "Central Warehouse",
           "quantity": 33,
           "region": "central"
+        },
+        {
+          "name": "East Coast Warehouse",
+          "quantity": 168,
+          "region": "east"
         },
         {
           "name": "West Coast Warehouse",
