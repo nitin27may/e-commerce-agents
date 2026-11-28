@@ -13,9 +13,186 @@
         ],
         "role": "user",
         "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"query\":\"wireless headphones\",\"category\":\"Electronics\",\"max_price\":300,\"limit\":10,\"sort_by\":\"rating\"}",
+            "call_id": "call_2l0oEmqa5XTemOS5yyhMGeSu",
+            "hosted": false,
+            "name": "search_products",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "call_id": "call_2l0oEmqa5XTemOS5yyhMGeSu",
+            "items": [
+              {
+                "additional_properties": {},
+                "text": "[{\"id\": \"f79fe707-f901-5dde-9258-c0198eee7c95\", \"name\": \"Kindle Paperwhite Signature\", \"description\": \"6.8-inch e-reader with wireless charging, auto-adjusting front light, and 32GB storage.\", \"category\": \"Electronics\", \"brand\": \"Amazon\", \"price\": 189.99, \"original_price\": 189.99, \"on_sale\": false, \"rating\": 4.0, \"review_count\": 12, \"image_url\": \"https://images.unsplash.com/photo-1585790050230-5dd28404ccb9?w=400&h=400&fit=crop\"}, {\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 3.93, \"review_count\": 15, \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}, {\"id\": \"035ae219-49be-59e2-a71e-94f06ca0fec9\", \"name\": \"Logitech MX Master 3S\", \"description\": \"Advanced wireless mouse with 8K DPI, quiet clicks, MagSpeed scroll, and multi-device support.\", \"category\": \"Electronics\", \"brand\": \"Logitech\", \"price\": 99.99, \"original_price\": 129.99, \"on_sale\": true, \"rating\": 3.88, \"review_count\": 16, \"image_url\": \"https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=400&h=400&fit=crop\"}]",
+                "type": "text"
+              }
+            ],
+            "result": "[{\"id\": \"f79fe707-f901-5dde-9258-c0198eee7c95\", \"name\": \"Kindle Paperwhite Signature\", \"description\": \"6.8-inch e-reader with wireless charging, auto-adjusting front light, and 32GB storage.\", \"category\": \"Electronics\", \"brand\": \"Amazon\", \"price\": 189.99, \"original_price\": 189.99, \"on_sale\": false, \"rating\": 4.0, \"review_count\": 12, \"image_url\": \"https://images.unsplash.com/photo-1585790050230-5dd28404ccb9?w=400&h=400&fit=crop\"}, {\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 3.93, \"review_count\": 15, \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}, {\"id\": \"035ae219-49be-59e2-a71e-94f06ca0fec9\", \"name\": \"Logitech MX Master 3S\", \"description\": \"Advanced wireless mouse with 8K DPI, quiet clicks, MagSpeed scroll, and multi-device support.\", \"category\": \"Electronics\", \"brand\": \"Logitech\", \"price\": 99.99, \"original_price\": 129.99, \"on_sale\": true, \"rating\": 3.88, \"review_count\": 16, \"image_url\": \"https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=400&h=400&fit=crop\"}]",
+            "type": "function_result"
+          }
+        ],
+        "role": "tool",
+        "type": "message"
       }
     ],
     "tools": [
+      {
+        "function": {
+          "description": "Search the product catalog using natural language. Supports filtering by category, price range, and rating.",
+          "name": "search_products",
+          "parameters": {
+            "properties": {
+              "category": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Filter by category: Electronics, Clothing, Home, Sports, Books",
+                "title": "Category"
+              },
+              "limit": {
+                "default": 10,
+                "description": "Max results to return",
+                "title": "Limit",
+                "type": "integer"
+              },
+              "max_price": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Maximum price filter",
+                "title": "Max Price"
+              },
+              "min_price": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Minimum price filter",
+                "title": "Min Price"
+              },
+              "min_rating": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Minimum rating (1-5)",
+                "title": "Min Rating"
+              },
+              "query": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Natural language search query (optional if using category filter)",
+                "title": "Query"
+              },
+              "sort_by": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Sort by: price_asc, price_desc, rating, newest",
+                "title": "Sort By"
+              }
+            },
+            "title": "search_products_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Get complete details for a specific product including full specs.",
+          "name": "get_product_details",
+          "parameters": {
+            "properties": {
+              "product_id": {
+                "description": "UUID of the product",
+                "title": "Product Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "product_id"
+            ],
+            "title": "get_product_details_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Compare 2-3 products side-by-side on key attributes.",
+          "name": "compare_products",
+          "parameters": {
+            "properties": {
+              "product_ids": {
+                "description": "List of 2-3 product UUIDs to compare",
+                "items": {
+                  "type": "string"
+                },
+                "title": "Product Ids",
+                "type": "array"
+              }
+            },
+            "required": [
+              "product_ids"
+            ],
+            "title": "compare_products_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
       {
         "function": {
           "description": "Search products using semantic similarity via pgvector embeddings. Best for vague or descriptive queries like 'something cozy for winter' or 'gift for a tech enthusiast'.",
@@ -72,6 +249,44 @@
       },
       {
         "function": {
+          "description": "Get trending products based on recent order volume.",
+          "name": "get_trending_products",
+          "parameters": {
+            "properties": {
+              "category": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Optional category filter",
+                "title": "Category"
+              },
+              "days": {
+                "default": 30,
+                "description": "Trending period in days",
+                "title": "Days",
+                "type": "integer"
+              },
+              "limit": {
+                "default": 10,
+                "description": "Max results",
+                "title": "Limit",
+                "type": "integer"
+              }
+            },
+            "title": "get_trending_products_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
           "description": "Check stock levels across all warehouses for a specific product.",
           "name": "check_stock",
           "parameters": {
@@ -107,6 +322,33 @@
               "product_id"
             ],
             "title": "get_warehouse_availability_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Get price history for a product over a specified number of days. Useful for showing price trends and identifying deals.",
+          "name": "get_price_history",
+          "parameters": {
+            "properties": {
+              "days": {
+                "default": 30,
+                "description": "Number of days of history (30, 60, or 90)",
+                "title": "Days",
+                "type": "integer"
+              },
+              "product_id": {
+                "description": "UUID of the product",
+                "title": "Product Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "product_id"
+            ],
+            "title": "get_price_history_input",
             "type": "object"
           }
         },
@@ -207,230 +449,20 @@
           }
         },
         "type": "function"
-      },
-      {
-        "function": {
-          "description": "Search the product catalog using natural language. Supports filtering by category, price range, and rating.",
-          "name": "search_products",
-          "parameters": {
-            "properties": {
-              "category": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Filter by category: Electronics, Clothing, Home, Sports, Books",
-                "title": "Category"
-              },
-              "limit": {
-                "default": 10,
-                "description": "Max results to return",
-                "title": "Limit",
-                "type": "integer"
-              },
-              "max_price": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Maximum price filter",
-                "title": "Max Price"
-              },
-              "min_price": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Minimum price filter",
-                "title": "Min Price"
-              },
-              "min_rating": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Minimum rating (1-5)",
-                "title": "Min Rating"
-              },
-              "query": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Natural language search query (optional if using category filter)",
-                "title": "Query"
-              },
-              "sort_by": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Sort by: price_asc, price_desc, rating, newest",
-                "title": "Sort By"
-              }
-            },
-            "title": "search_productsArguments",
-            "type": "object"
-          }
-        },
-        "type": "function"
-      },
-      {
-        "function": {
-          "description": "Get complete details for a specific product including full specs.",
-          "name": "get_product_details",
-          "parameters": {
-            "properties": {
-              "product_id": {
-                "description": "UUID of the product",
-                "title": "Product Id",
-                "type": "string"
-              }
-            },
-            "required": [
-              "product_id"
-            ],
-            "title": "get_product_detailsArguments",
-            "type": "object"
-          }
-        },
-        "type": "function"
-      },
-      {
-        "function": {
-          "description": "Compare 2-3 products side-by-side on key attributes.",
-          "name": "compare_products",
-          "parameters": {
-            "properties": {
-              "product_ids": {
-                "description": "List of 2-3 product UUIDs to compare",
-                "items": {
-                  "type": "string"
-                },
-                "title": "Product Ids",
-                "type": "array"
-              }
-            },
-            "required": [
-              "product_ids"
-            ],
-            "title": "compare_productsArguments",
-            "type": "object"
-          }
-        },
-        "type": "function"
-      },
-      {
-        "function": {
-          "description": "Get trending products based on recent order volume.",
-          "name": "get_trending_products",
-          "parameters": {
-            "properties": {
-              "category": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Optional category filter",
-                "title": "Category"
-              },
-              "days": {
-                "default": 30,
-                "description": "Trending period in days",
-                "title": "Days",
-                "type": "integer"
-              },
-              "limit": {
-                "default": 10,
-                "description": "Max results",
-                "title": "Limit",
-                "type": "integer"
-              }
-            },
-            "title": "get_trending_productsArguments",
-            "type": "object"
-          }
-        },
-        "type": "function"
-      },
-      {
-        "function": {
-          "description": "Get price history for a product over a specified number of days. Useful for showing price trends and identifying deals.",
-          "name": "get_price_history",
-          "parameters": {
-            "properties": {
-              "days": {
-                "default": 30,
-                "description": "Number of days of history (30, 60, or 90)",
-                "title": "Days",
-                "type": "integer"
-              },
-              "product_id": {
-                "description": "UUID of the product",
-                "title": "Product Id",
-                "type": "string"
-              }
-            },
-            "required": [
-              "product_id"
-            ],
-            "title": "get_price_historyArguments",
-            "type": "object"
-          }
-        },
-        "type": "function"
       }
     ]
   },
   "response": {
-    "created_at": "2026-11-24T19:01:57.000000Z",
-    "finish_reason": "tool_calls",
+    "created_at": "2026-11-28T02:32:16.000000Z",
+    "finish_reason": "stop",
     "messages": [
       {
         "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"query\":\"wireless headphones\",\"max_price\":300,\"limit\":10,\"sort_by\":\"rating\"}",
-            "call_id": "call_XSanhGHKVBLyFrOCHvS4Gh59",
-            "hosted": false,
-            "name": "search_products",
-            "type": "function_call"
+            "text": "Here are some wireless headphones under $300. The Sony WH-1000XM5 stands out as a premium option and is currently on sale, making it a good deal. Please note, some results may include wireless devices that aren't headphones\u2014let me know if you'd like only headphone models.\n\n- Sony WH-1000XM5: Premium wireless noise-cancelling headphones, 30-hour battery, multipoint connection, speak-to-chat. On sale for $299.99 (originally $349.99).\n- If you want more options or only headphones, I can refine the search further.\n\nHere are the top results:\n\n```products\n[{\"name\": \"Sony WH-1000XM5\", \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"price\": 299.99, \"rating\": 3.93, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}]\n```\n\nWould you like to see more wireless headphone models or compare features?",
+            "type": "text"
           }
         ],
         "role": "assistant",
@@ -438,7 +470,7 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-Enq45kU655DPmFBNZJM6GbXJGPXri",
+    "response_id": "chatcmpl-Ep2WWUYEKzavOF9CLMB2TL7d8ycw4",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 0,
@@ -446,12 +478,12 @@
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
       "completion/rejected_prediction_tokens": 0,
-      "input_token_count": 4086,
-      "output_token_count": 30,
+      "input_token_count": 4607,
+      "output_token_count": 288,
       "prompt/audio_tokens": 0,
       "prompt/cached_tokens": 0,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4116
+      "total_token_count": 4895
     }
   }
 }

@@ -7,7 +7,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Find me wireless headphones under $300",
+            "text": "Show me the full details for the Sony WH-1000XM5",
             "type": "text"
           }
         ],
@@ -19,8 +19,8 @@
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"query\":\"wireless headphones\",\"category\":\"Electronics\",\"max_price\":300,\"limit\":10,\"sort_by\":\"rating\"}",
-            "call_id": "call_2l0oEmqa5XTemOS5yyhMGeSu",
+            "arguments": "{\"query\":\"Sony WH-1000XM5\",\"limit\":1}",
+            "call_id": "call_pw6ogaQjggkFmZY1SjxZjoh4",
             "hosted": false,
             "name": "search_products",
             "type": "function_call"
@@ -34,15 +34,15 @@
         "contents": [
           {
             "additional_properties": {},
-            "call_id": "call_2l0oEmqa5XTemOS5yyhMGeSu",
+            "call_id": "call_pw6ogaQjggkFmZY1SjxZjoh4",
             "items": [
               {
                 "additional_properties": {},
-                "text": "[{\"id\": \"035ae219-49be-59e2-a71e-94f06ca0fec9\", \"name\": \"Logitech MX Master 3S\", \"description\": \"Advanced wireless mouse with 8K DPI, quiet clicks, MagSpeed scroll, and multi-device support.\", \"category\": \"Electronics\", \"brand\": \"Logitech\", \"price\": 99.99, \"original_price\": 129.99, \"on_sale\": true, \"rating\": 4.8, \"review_count\": 16, \"image_url\": \"https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=400&h=400&fit=crop\"}, {\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 4.7, \"review_count\": 15, \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}, {\"id\": \"f79fe707-f901-5dde-9258-c0198eee7c95\", \"name\": \"Kindle Paperwhite Signature\", \"description\": \"6.8-inch e-reader with wireless charging, auto-adjusting front light, and 32GB storage.\", \"category\": \"Electronics\", \"brand\": \"Amazon\", \"price\": 189.99, \"original_price\": 189.99, \"on_sale\": false, \"rating\": 4.7, \"review_count\": 12, \"image_url\": \"https://images.unsplash.com/photo-1585790050230-5dd28404ccb9?w=400&h=400&fit=crop\"}]",
+                "text": "[{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 3.93, \"review_count\": 15, \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}]",
                 "type": "text"
               }
             ],
-            "result": "[{\"id\": \"035ae219-49be-59e2-a71e-94f06ca0fec9\", \"name\": \"Logitech MX Master 3S\", \"description\": \"Advanced wireless mouse with 8K DPI, quiet clicks, MagSpeed scroll, and multi-device support.\", \"category\": \"Electronics\", \"brand\": \"Logitech\", \"price\": 99.99, \"original_price\": 129.99, \"on_sale\": true, \"rating\": 4.8, \"review_count\": 16, \"image_url\": \"https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=400&h=400&fit=crop\"}, {\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 4.7, \"review_count\": 15, \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}, {\"id\": \"f79fe707-f901-5dde-9258-c0198eee7c95\", \"name\": \"Kindle Paperwhite Signature\", \"description\": \"6.8-inch e-reader with wireless charging, auto-adjusting front light, and 32GB storage.\", \"category\": \"Electronics\", \"brand\": \"Amazon\", \"price\": 189.99, \"original_price\": 189.99, \"on_sale\": false, \"rating\": 4.7, \"review_count\": 12, \"image_url\": \"https://images.unsplash.com/photo-1585790050230-5dd28404ccb9?w=400&h=400&fit=crop\"}]",
+            "result": "[{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 3.93, \"review_count\": 15, \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}]",
             "type": "function_result"
           }
         ],
@@ -453,16 +453,19 @@
     ]
   },
   "response": {
-    "created_at": "2026-11-24T03:05:03.000000Z",
-    "finish_reason": "stop",
+    "created_at": "2026-11-28T02:32:18.000000Z",
+    "finish_reason": "tool_calls",
     "messages": [
       {
         "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
-            "text": "Here are some wireless headphones under $300. The Sony WH-1000XM5 stands out as a premium option with excellent noise-cancelling and battery life, and it's currently on sale. The Logitech MX Master 3S is actually a wireless mouse, not headphones, so I'll focus on the Sony model for your needs.\n\nIf you'd like more options or a comparison, let me know!\n\n```product\n{\"name\": \"Sony WH-1000XM5\", \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}\n```\n\nLet me know if you want to see more wireless headphone options or compare features!",
-            "type": "text"
+            "arguments": "{\"product_id\":\"dc9e2baa-8182-58f8-9df1-97d049426ba1\"}",
+            "call_id": "call_k3aqxq3vQnWxVIUPTzVZLajP",
+            "hosted": false,
+            "name": "get_product_details",
+            "type": "function_call"
           }
         ],
         "role": "assistant",
@@ -470,7 +473,7 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-Enb83w46ckOR7oaBxHvIgz2puHWKd",
+    "response_id": "chatcmpl-Ep2WYFwHiacnZb7xUlM4CT4EL0ZUz",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 3968,
@@ -478,12 +481,12 @@
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
       "completion/rejected_prediction_tokens": 0,
-      "input_token_count": 4586,
-      "output_token_count": 251,
+      "input_token_count": 4304,
+      "output_token_count": 38,
       "prompt/audio_tokens": 0,
       "prompt/cached_tokens": 3968,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4837
+      "total_token_count": 4342
     }
   }
 }

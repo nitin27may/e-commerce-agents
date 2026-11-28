@@ -665,10 +665,13 @@ async def seed_reviews(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID],
         )
         count += 1
 
-    # Update review counts on products
+    # A product's rating and count come from its reviews. The catalog's hand-written ratings (4.7 for a product whose
+    # reviews average 3.93) disagreed with the review summary shown beside them; the review tool averages all of a
+    # product's reviews, so this does too.
     await conn.execute(
-        """UPDATE products SET review_count = sub.cnt
-           FROM (SELECT product_id, COUNT(*) as cnt FROM reviews GROUP BY product_id) sub
+        """UPDATE products SET review_count = sub.cnt, rating = sub.avg
+           FROM (SELECT product_id, COUNT(*) AS cnt, ROUND(AVG(rating)::numeric, 2) AS avg
+                 FROM reviews GROUP BY product_id) sub
            WHERE products.id = sub.product_id"""
     )
     logger.info("Seeded %d reviews", count)

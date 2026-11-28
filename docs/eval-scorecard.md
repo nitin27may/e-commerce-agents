@@ -4,7 +4,7 @@
 
 Scores per specialist and dataset, as committed in `agents/python/evals/baselines/python-inproc-replay/` (baselines are keyed by setup: stack, target and model).
 
-**Read this first.** These numbers are a regression signal, not a quality measurement. Every case was answered from a replay fixture recorded on `gpt-4.1-2025-04-14` (184 fixtures) between 2026-08-21 and 2026-11-24, and the scorer is deterministic: groundedness is a database check, correctness is a tool or route match, and completeness is a keyword check, not a judge model. A score tells you the recorded answers still pass the current code and prompts, which is what the PR job named Replay regression checks. It says nothing about how a different model, or the same model today, would do. Each dataset has five or six cases, so one flipped case moves a score by 0.1 or more, and the score is a property of the recording session as much as of the system (see `agents/python/evals/fixtures/README.md`).
+**Read this first.** These numbers are a regression signal, not a quality measurement. Every case was answered from a replay fixture recorded on `gpt-4.1-2025-04-14` (171 fixtures) between 2026-08-21 and 2026-11-28, and the scorer is deterministic: groundedness is a database check, correctness is a tool or route match, and completeness is a keyword check, not a judge model. A score tells you the recorded answers still pass the current code and prompts, which is what the PR job named Replay regression checks. It says nothing about how a different model, or the same model today, would do. Each dataset has five or six cases, so one flipped case moves a score by 0.1 or more, and the score is a property of the recording session as much as of the system (see `agents/python/evals/fixtures/README.md`).
 
 ## Quality baselines
 
@@ -17,7 +17,7 @@ Scores per specialist and dataset, as committed in `agents/python/evals/baseline
 | order-management | `approvals.json` | 5 | 1.00 | 1.00 | 1.00 | 1.00 |
 | order-management | `order_management.json` | 5 | 1.00 | 0.70 | 0.35 | 0.75 |
 | pricing-promotions | `pricing_promotions.json` | 5 | 1.00 | 1.00 | 0.80 | 0.96 |
-| product-discovery | `product_discovery.json` | 6 | 1.00 | 0.92 | 0.97 | 0.96 |
+| product-discovery | `product_discovery.json` | 6 | 1.00 | 0.92 | 1.00 | 0.97 |
 | review-sentiment | `review_sentiment.json` | 5 | 1.00 | 1.00 | 1.00 | 1.00 |
 
 The baselines record no date or commit of their own. Git history on the baseline files gives the commit that last changed each one.
@@ -46,6 +46,7 @@ Summed over each suite's fixtures. Informational; it is not a price.
 | order-management | 32,965 | 277 |
 | order-management | 51,089 | 420 |
 | pricing-promotions | 48,885 | 1,088 |
+| product-discovery | 60,743 | 3,182 |
 
 ## Prompt and tool-schema size
 

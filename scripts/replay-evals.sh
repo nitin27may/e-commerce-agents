@@ -33,7 +33,10 @@ export REDIS_URL="${REDIS_URL:-redis://localhost:6379}"
 export ENVIRONMENT="${ENVIRONMENT:-test}"
 export JWT_SECRET="${JWT_SECRET:-ci-eval-jwt-secret-please-rotate-32bytes}"
 export AGENT_SHARED_SECRET="${AGENT_SHARED_SECRET:-ci-eval-agent-secret-please-rotate-32b}"
-DEFAULT_REGISTRY='{"product-discovery":"http://localhost:8081","order-management":"http://localhost:8082","pricing-promotions":"http://localhost:8083","review-sentiment":"http://localhost:8084","inventory-fulfillment":"http://localhost:8085"}'
+# The five specialists listen on SPECIALIST_PORT_BASE..+4 (default 8081..8085); move them when those ports are taken.
+PORT_BASE="${SPECIALIST_PORT_BASE:-8081}"
+SPECIALIST_PORTS=("$PORT_BASE" "$((PORT_BASE + 1))" "$((PORT_BASE + 2))" "$((PORT_BASE + 3))" "$((PORT_BASE + 4))")
+DEFAULT_REGISTRY="{\"product-discovery\":\"http://localhost:${SPECIALIST_PORTS[0]}\",\"order-management\":\"http://localhost:${SPECIALIST_PORTS[1]}\",\"pricing-promotions\":\"http://localhost:${SPECIALIST_PORTS[2]}\",\"review-sentiment\":\"http://localhost:${SPECIALIST_PORTS[3]}\",\"inventory-fulfillment\":\"http://localhost:${SPECIALIST_PORTS[4]}\"}"
 export AGENT_REGISTRY="${AGENT_REGISTRY:-$DEFAULT_REGISTRY}"
 # Replay scores are a property of the recording session; what a change can move
 # is measured by --baseline/--max-regression and the missing-fixture check.
@@ -75,14 +78,15 @@ run_in_new_session() {
 
 start_specialists() {
   cd "$PY_DIR" || return 1
-  for svc in product_discovery:8081 order_management:8082 pricing_promotions:8083 review_sentiment:8084 inventory_fulfillment:8085; do
+  for svc in "product_discovery:${SPECIALIST_PORTS[0]}" "order_management:${SPECIALIST_PORTS[1]}" "pricing_promotions:${SPECIALIST_PORTS[2]}" \
+             "review_sentiment:${SPECIALIST_PORTS[3]}" "inventory_fulfillment:${SPECIALIST_PORTS[4]}"; do
     name="${svc%%:*}"; port="${svc##*:}"
     AGENT_NAME="$name" AGENT_PORT="$port" \
       run_in_new_session nohup uv run --no-project uvicorn "${name}.main:app" --host 0.0.0.0 --port "$port" \
       > "$LOG_DIR/${name}.log" 2>&1 &
     SPECIALIST_PIDS+=("$!")
   done
-  for port in 8081 8082 8083 8084 8085; do
+  for port in "${SPECIALIST_PORTS[@]}"; do
     for _ in $(seq 1 30); do
       curl -sf "http://localhost:$port/health" > /dev/null && break
       sleep 1

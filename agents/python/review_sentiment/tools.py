@@ -169,8 +169,8 @@ async def analyze_sentiment(
                     if kw in text and kw not in [c.lower() for c in cons]:
                         cons.append(kw.capitalize())
 
-        # Average from the reviews themselves: products.rating is a static seeded column that does not
-        # agree with them (it showed 4.4 for a product whose reviews average 3.22).
+        # Average from the reviews themselves. The seeder sets products.rating from the same reviews, but
+        # reviews added later would make a stored rating stale; these rows never are.
         if total_reviews:
             avg = round(sum(int(star) * count for star, count in distribution.items()) / total_reviews, 2)
         else:

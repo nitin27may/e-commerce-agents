@@ -7,7 +7,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Show me the full details for the Sony WH-1000XM5",
+            "text": "wireless headphones with noise cancellation under $300",
             "type": "text"
           }
         ],
@@ -19,8 +19,8 @@
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"query\":\"Sony WH-1000XM5\",\"limit\":1}",
-            "call_id": "call_pw6ogaQjggkFmZY1SjxZjoh4",
+            "arguments": "{\"query\":\"wireless headphones noise cancellation\",\"category\":\"Electronics\",\"max_price\":300,\"limit\":10,\"min_rating\":4.0}",
+            "call_id": "call_DR0xU2WUSSHKiQLfClW5BrJ6",
             "hosted": false,
             "name": "search_products",
             "type": "function_call"
@@ -34,50 +34,15 @@
         "contents": [
           {
             "additional_properties": {},
-            "call_id": "call_pw6ogaQjggkFmZY1SjxZjoh4",
+            "call_id": "call_DR0xU2WUSSHKiQLfClW5BrJ6",
             "items": [
               {
                 "additional_properties": {},
-                "text": "[{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 4.7, \"review_count\": 15, \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}]",
+                "text": "[{\"id\": \"f79fe707-f901-5dde-9258-c0198eee7c95\", \"name\": \"Kindle Paperwhite Signature\", \"description\": \"6.8-inch e-reader with wireless charging, auto-adjusting front light, and 32GB storage.\", \"category\": \"Electronics\", \"brand\": \"Amazon\", \"price\": 189.99, \"original_price\": 189.99, \"on_sale\": false, \"rating\": 4.0, \"review_count\": 12, \"image_url\": \"https://images.unsplash.com/photo-1585790050230-5dd28404ccb9?w=400&h=400&fit=crop\"}]",
                 "type": "text"
               }
             ],
-            "result": "[{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 4.7, \"review_count\": 15, \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}]",
-            "type": "function_result"
-          }
-        ],
-        "role": "tool",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {},
-            "arguments": "{\"product_id\":\"dc9e2baa-8182-58f8-9df1-97d049426ba1\"}",
-            "call_id": "call_DnSmAXBtT8ZL5FSUhPFwdbY8",
-            "hosted": false,
-            "name": "get_product_details",
-            "type": "function_call"
-          }
-        ],
-        "role": "assistant",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {},
-            "call_id": "call_DnSmAXBtT8ZL5FSUhPFwdbY8",
-            "items": [
-              {
-                "additional_properties": {},
-                "text": "{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 4.7, \"review_count\": 15, \"specs\": {\"type\": \"Over-ear\", \"weight\": \"250g\", \"battery\": \"30 hours\", \"connectivity\": \"Bluetooth 5.2\", \"noise_cancelling\": true}}",
-                "type": "text"
-              }
-            ],
-            "result": "{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 4.7, \"review_count\": 15, \"specs\": {\"type\": \"Over-ear\", \"weight\": \"250g\", \"battery\": \"30 hours\", \"connectivity\": \"Bluetooth 5.2\", \"noise_cancelling\": true}}",
+            "result": "[{\"id\": \"f79fe707-f901-5dde-9258-c0198eee7c95\", \"name\": \"Kindle Paperwhite Signature\", \"description\": \"6.8-inch e-reader with wireless charging, auto-adjusting front light, and 32GB storage.\", \"category\": \"Electronics\", \"brand\": \"Amazon\", \"price\": 189.99, \"original_price\": 189.99, \"on_sale\": false, \"rating\": 4.0, \"review_count\": 12, \"image_url\": \"https://images.unsplash.com/photo-1585790050230-5dd28404ccb9?w=400&h=400&fit=crop\"}]",
             "type": "function_result"
           }
         ],
@@ -488,7 +453,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-11-24T03:05:06.000000Z",
+    "created_at": "2026-11-28T02:32:22.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -496,7 +461,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Here are the full details for the Sony WH-1000XM5 headphones. These are premium wireless, over-ear headphones featuring industry-leading noise cancellation, a long 30-hour battery life, multipoint Bluetooth 5.2 connectivity, and a lightweight design (250g). They're currently on sale, making them a great deal.\n\n- Type: Over-ear\n- Weight: 250g\n- Battery life: 30 hours\n- Connectivity: Bluetooth 5.2\n- Noise cancelling: Yes\n- Rating: 4.7 (15 reviews)\n- Price: $299.99 (originally $349.99)\n\nLet me know if you want to compare this with other headphones or see similar options!\n\n```product\n{\"name\": \"Sony WH-1000XM5\", \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}\n```",
+            "text": "I searched for wireless headphones with noise cancellation under $300, but I couldn't find any matching products in the current catalog. The closest result was an e-reader, which doesn't fit your request.\n\nWould you like me to broaden the search, check for wired headphones, or look for wireless headphones without noise cancellation? Let me know your preferences and I'll try again.",
             "type": "text"
           }
         ],
@@ -505,20 +470,20 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-Enb86DpMQOqKokOjABy7pO5IYvR0Z",
+    "response_id": "chatcmpl-Ep2WcnAxVu0I0jy29CoqEQ1uB9Lqv",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 4224,
+      "cache_read_input_token_count": 3968,
       "completion/accepted_prediction_tokens": 0,
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
       "completion/rejected_prediction_tokens": 0,
-      "input_token_count": 4492,
-      "output_token_count": 300,
+      "input_token_count": 4305,
+      "output_token_count": 72,
       "prompt/audio_tokens": 0,
-      "prompt/cached_tokens": 4224,
+      "prompt/cached_tokens": 3968,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4792
+      "total_token_count": 4377
     }
   }
 }

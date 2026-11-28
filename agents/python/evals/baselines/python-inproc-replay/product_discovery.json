@@ -1,8 +1,32 @@
 {
   "avg_groundedness": 1.0,
   "avg_correctness": 0.9167,
-  "avg_completeness": 0.9667,
-  "overall_score": 0.96,
+  "avg_completeness": 1.0,
+  "overall_score": 0.9667,
+  "total_tokens_in": 60743,
+  "total_tokens_out": 3182,
   "agent_name": "product-discovery",
-  "dataset_path": "evals/datasets/product_discovery.json"
+  "dataset_path": "evals/datasets/product_discovery.json",
+  "setup": {
+    "stack": "python",
+    "target": "inproc",
+    "chat_provider": "replay",
+    "chat_model": "gpt-4.1",
+    "chat_api": "",
+    "embedding_provider": "replay",
+    "embedding_model": "text-embedding-3-small",
+    "judge": {
+      "kind": "keyword",
+      "provider": "",
+      "model": "",
+      "self_judged": false
+    },
+    "gateway": "none",
+    "pricing_source": "pricing:models.yaml@878692dc",
+    "endpoint": "",
+    "orchestration_mode": ""
+  },
+  "setup_key": "python-inproc-replay",
+  "repeats": 1,
+  "dataset_cases": 6
 }
