@@ -21,7 +21,7 @@
  * read that stock count. So "return" runs second to last and "hero" last. Re-run on a freshly seeded database.
  */
 
-import { test, expect, type Browser, type Page } from "@playwright/test";
+import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import * as path from "path";
 import { glideClick, parkPointer, showPointer, startScreencast } from "./media/screencast";
 
@@ -57,6 +57,20 @@ test.describe.configure({ mode: "serial" });
 
 const beat = (page: Page, ms = 1_000) => page.waitForTimeout(ms);
 const take = (name: string) => path.join(FRAMES_ROOT, name);
+
+/**
+ * Leave exactly these modes pressed in the Compare dialog. On the no-key stack only the workflow modes can answer a
+ * fresh compare request, so a model-backed mode left selected films a replay-miss card.
+ */
+async function selectOnlyModes(dialog: Locator, wanted: RegExp[], click: (l: Locator) => Promise<unknown> = (l) => l.click()) {
+  const chips = dialog.locator("button[aria-pressed]");
+  for (let i = 0; i < (await chips.count()); i++) {
+    const chip = chips.nth(i);
+    const name = (await chip.textContent()) ?? "";
+    const want = wanted.some((re) => re.test(name.trim()));
+    if (want !== ((await chip.getAttribute("aria-pressed")) === "true")) await click(chip);
+  }
+}
 
 /** Space out the structural SSE frames: the workflow modes finish in milliseconds on a replay stack. */
 function paceStream(page: Page, delayMs: number) {
@@ -208,7 +222,7 @@ test("stills: every documented screen, on the current UI", async ({ browser }) =
   await a.page.waitForLoadState("networkidle").catch(() => {});
   await still(a.page, "marketplace");
   await openChat(a.page);
-  await ask(a.page, "Find me wireless headphones under $300 with good noise cancellation");
+  await ask(a.page, "Find me noise-cancelling wireless headphones under $300");
   await showLatestAnswer(a.page);
   await still(a.page, "flow-product-search");
   await openChat(a.page);
@@ -234,7 +248,6 @@ test("stills: every documented screen, on the current UI", async ({ browser }) =
   await glideClick(t.page, t.page.getByRole("button", { name: "Return my Dyson (needs approval)" }));
   await waitForTurn(t.page, before);
   await still(t.page, "return-awaiting-approval");
-  await still(t.page, "flow-refund");
   await t.context.close();
 
   // Staff: the parked return on /runs and in the approvals inbox, and the dashboards.
@@ -281,10 +294,7 @@ test("stills: every documented screen, on the current UI", async ({ browser }) =
   await g.page.getByRole("button", { name: /^Compare/ }).first().click();
   const dialog = g.page.getByRole("dialog");
   await dialog.locator("textarea").fill(PROMPTS.prePurchase);
-  const toolRouter = dialog.getByText("Tool Router", { exact: true });
-  if (await toolRouter.isVisible().catch(() => false)) await toolRouter.click();
-  await dialog.getByText(/^Pre-Purchase Research/).click();
-  await dialog.getByText(/^Return & Replace/).click();
+  await selectOnlyModes(dialog, [/^Pre-Purchase Research/, /^Return & Replace/]);
   await dialog.getByRole("button", { name: /run comparison/i }).click();
   await expect(dialog.getByTestId(/^usage-/).first()).toBeVisible({ timeout: 60_000 });
   await beat(g.page, 1_200);
@@ -380,10 +390,7 @@ test("lab: the same chat with its machinery shown", async ({ browser }) => {
   await glideClick(page, box);
   await box.pressSequentially(PROMPTS.prePurchase, { delay: 12 });
   // Only the workflow modes (no model) answer a fresh compare request on the no-key stack.
-  const toolRouter = dialog.getByText("Tool Router", { exact: true });
-  if (await toolRouter.isVisible().catch(() => false)) await glideClick(page, toolRouter);
-  await glideClick(page, dialog.getByText(/^Pre-Purchase Research/));
-  await glideClick(page, dialog.getByText(/^Return & Replace/));
+  await selectOnlyModes(dialog, [/^Pre-Purchase Research/, /^Return & Replace/], (l) => glideClick(page, l));
   await glideClick(page, dialog.getByRole("button", { name: /run comparison/i }));
   await parkPointer(page);
   await expect(dialog.getByTestId(/^usage-/).first(), "the comparison returned nothing").toBeVisible({ timeout: 60_000 });

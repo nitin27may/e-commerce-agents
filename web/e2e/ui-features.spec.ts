@@ -187,8 +187,9 @@ test.describe("Fixed Pages", () => {
       await firstOrder.click();
       await page.waitForURL(/\/orders\//);
       // Items should have product names (not empty)
+      // The items load after the page shell: wait for the first row instead of counting at once.
       const productNames = page.locator("td").filter({ hasText: /.{3,}/ });
-      expect(await productNames.count()).toBeGreaterThan(0);
+      await expect(productNames.first()).toBeVisible({ timeout: 10000 });
     }
   });
 

@@ -48,7 +48,12 @@ describe("ModeComparison", () => {
     const runButton = screen.getByRole("button", { name: /Run comparison/ });
     expect(runButton).toBeDisabled();
 
-    fireEvent.click(screen.getByText("Pre-Purchase Research"));
+    // Mode chips are toggle buttons, so the selection is visible to assistive tech (and to the media spec).
+    const toolChip = screen.getByRole("button", { name: "Tool Router", pressed: true });
+    const researchChip = screen.getByRole("button", { name: "Pre-Purchase Research", pressed: false });
+    fireEvent.click(researchChip);
+    expect(researchChip).toHaveAttribute("aria-pressed", "true");
+    expect(toolChip).toHaveAttribute("aria-pressed", "true");
     expect(runButton).toBeDisabled(); // still no prompt text
 
     fireEvent.change(screen.getByPlaceholderText(/headphones/), { target: { value: "worth it?" } });

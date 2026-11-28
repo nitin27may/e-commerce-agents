@@ -230,9 +230,7 @@ test.describe("Admin Role", () => {
   test("admin audit page loads", async ({ page }) => {
     await page.goto("/admin/audit");
     await page.waitForLoadState("networkidle");
-    // The page's heading is "Agent Runs" — it renders the run history rather than a
-    // generic audit log, so /audit|log/ matched nothing on a page that loads fine.
-    await expect(page.getByText(/agent runs|access denied/i).first()).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { name: /^audit$/i })).toBeVisible({ timeout: 10000 });
   });
 
   test("admin can browse products and orders", async ({ page }) => {

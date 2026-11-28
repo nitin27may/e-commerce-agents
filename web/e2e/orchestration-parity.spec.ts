@@ -222,7 +222,7 @@ test.describe(`orchestration parity [${BACKEND}]`, () => {
     // this gate exists to catch. Driving a turn and hoping the model chooses
     // to call store_memory would also make it flaky.
     await page.goto("/profile");
-    await expect(page.getByText(/AI Memory/i).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/what the assistant remembers/i).first()).toBeVisible({ timeout: 15000 });
 
     const token = await page.evaluate(() =>
       localStorage.getItem("ecommerce_access_token") ?? "",
@@ -238,16 +238,23 @@ test.describe(`orchestration parity [${BACKEND}]`, () => {
     ).toBe(200);
   });
 
-  test("a grounded answer renders the grounding badge", async ({ page }) => {
+  test("a grounded answer reports grounding", async ({ page }) => {
     skipIfKnownGap("a grounded answer renders the grounding badge");
     await login(page);
+    // The stream must carry the grounding frame: a backend that never sends it is the silent failure. The storefront
+    // chat does not show it (no internals for any role; the staff Lab renders it as a badge), so it is read here.
+    const res = await page.request.post(`${ORCH_URL}/api/chat/stream`, {
+      headers: { Authorization: `Bearer ${await token(page)}`, "Content-Type": "application/json" },
+      data: { message: "Show me wireless headphones under $400" },
+      timeout: 120_000,
+    });
+    expect(res.ok(), "POST /api/chat/stream").toBe(true);
+    const raw = await res.text();
+    expect(raw, "the answer was not recorded").not.toContain("event: replay_miss");
+    expect(raw, "a product answer must report grounding").toContain("event: grounding");
+
     await page.goto("/chat");
     await sendMessageAndWaitForTurn(page, "Show me wireless headphones under $400");
-
-    const badge = page.getByText(/verified against the database/i).first();
-    await expect(
-      badge,
-      "a product answer must report grounding; the badge never rendering is the silent failure",
-    ).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/verified against the database/i)).toHaveCount(0);
   });
 });

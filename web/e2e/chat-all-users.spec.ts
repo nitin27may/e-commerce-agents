@@ -81,8 +81,8 @@ for (const user of USERS) {
       // The LLM should respond with something about its capabilities
       expect(response.length).toBeGreaterThan(20);
 
-      // Should show "orchestrator" badge on the assistant message
-      await expect(page.getByText("orchestrator").first()).toBeVisible();
+      // The storefront chat names no agent to any role: internals live in the staff Lab (/lab).
+      await expect(page.getByTestId("assistant-text").last()).not.toContainText(/orchestrator|specialist/i);
     });
 
     test("conversation appears in sidebar after first message", async ({ page }) => {

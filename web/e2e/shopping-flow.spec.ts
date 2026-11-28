@@ -1,6 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import { staffPassword } from "./credentials";
 
+const API = process.env.E2E_API_URL ?? "http://localhost:8080";
+
 // Shared login helper
 async function login(page: Page, email: string, password: string) {
   await page.goto("/login");
@@ -87,17 +89,15 @@ test.describe("Customer Shopping Flow", () => {
     await page.goto("/orders");
     await page.waitForTimeout(3000);
     await page.screenshot({ path: "e2e/screenshots/orders-page.png" });
-    // Should have orders (Alice has seeded orders)
-    const orderCards = page.locator('[class*="cursor-pointer"]');
-    const count = await orderCards.count();
-    expect(count).toBeGreaterThan(0);
+    // Should have orders (Alice has seeded orders); each row links to its detail page.
+    await expect(page.locator('a[href^="/orders/"]').first()).toBeVisible({ timeout: 10000 });
   });
 
   test("should see order detail with status timeline", async ({ page }) => {
     await page.goto("/orders");
     await page.waitForTimeout(3000);
     // Click first order
-    const firstOrder = page.locator('[class*="cursor-pointer"]').first();
+    const firstOrder = page.locator('a[href^="/orders/"]').first();
     if (await firstOrder.isVisible()) {
       await firstOrder.click();
       await page.waitForURL(/\/orders\//, { timeout: 10000 });
@@ -234,7 +234,7 @@ test.describe("API Endpoints", () => {
   let token: string;
 
   test.beforeAll(async ({ request }) => {
-    const res = await request.post("http://localhost:8080/api/auth/login", {
+    const res = await request.post(`${API}/api/auth/login`, {
       data: { email: "alice.johnson@gmail.com", password: "customer123" },
     });
     expect(res.ok()).toBeTruthy();
@@ -243,7 +243,7 @@ test.describe("API Endpoints", () => {
   });
 
   test("GET /api/cart should return cart data", async ({ request }) => {
-    const res = await request.get("http://localhost:8080/api/cart", {
+    const res = await request.get(`${API}/api/cart`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.ok()).toBeTruthy();
@@ -254,7 +254,7 @@ test.describe("API Endpoints", () => {
   });
 
   test("GET /api/products should return products", async ({ request }) => {
-    const res = await request.get("http://localhost:8080/api/products", {
+    const res = await request.get(`${API}/api/products`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.ok()).toBeTruthy();
@@ -266,7 +266,7 @@ test.describe("API Endpoints", () => {
   });
 
   test("GET /api/orders should return orders", async ({ request }) => {
-    const res = await request.get("http://localhost:8080/api/orders", {
+    const res = await request.get(`${API}/api/orders`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.ok()).toBeTruthy();
@@ -276,13 +276,13 @@ test.describe("API Endpoints", () => {
 
   test("POST /api/cart/items should add item to cart", async ({ request }) => {
     // First get a product
-    const prodRes = await request.get("http://localhost:8080/api/products", {
+    const prodRes = await request.get(`${API}/api/products`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const products = (await prodRes.json()).products;
     const productId = products[0].id;
 
-    const res = await request.post("http://localhost:8080/api/cart/items", {
+    const res = await request.post(`${API}/api/cart/items`, {
       headers: { Authorization: `Bearer ${token}` },
       data: { product_id: productId, quantity: 1 },
     });
@@ -292,12 +292,12 @@ test.describe("API Endpoints", () => {
   });
 
   test("GET /api/orders/:id should include billing_address and return info", async ({ request }) => {
-    const ordersRes = await request.get("http://localhost:8080/api/orders", {
+    const ordersRes = await request.get(`${API}/api/orders`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const orders = (await ordersRes.json()).orders;
     if (orders.length > 0) {
-      const orderRes = await request.get(`http://localhost:8080/api/orders/${orders[0].id}`, {
+      const orderRes = await request.get(`${API}/api/orders/${orders[0].id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       expect(orderRes.ok()).toBeTruthy();

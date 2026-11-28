@@ -161,14 +161,8 @@ test.describe("UI Shopping Actions", () => {
     await page.waitForSelector('[class*="grid"]', { timeout: 10000 });
     await page.screenshot({ path: "e2e/screenshots/ui-products-grid.png" });
 
-    // 2. Click first product.
-    // Not `> a`: the product grid stopped rendering anchors when the cards
-    // moved to an onClick + router.push (see (app)/products/page.tsx), so that
-    // selector matched nothing and this test spent its whole 90s budget
-    // waiting for an element that cannot exist. Verified against a frontend
-    // calling the orchestrator directly as well as through the /api proxy, so
-    // it is the selector, not the transport.
-    const firstProduct = page.locator('div.grid [data-slot="card"]').first();
+    // 2. Click first product: the grid cards are links to the product page (ProductGridCard).
+    const firstProduct = page.locator('a[href^="/products/"]').first();
     await firstProduct.click();
     await page.waitForURL(/\/products\//, { timeout: 10000 });
     await page.waitForTimeout(2000);
