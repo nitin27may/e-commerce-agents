@@ -1,4 +1,4 @@
-"""The seeded price history gives get_price_history's N-day window N-1 points (60 days: 59), and the demo recordings agree.
+"""The seeded price history gives an N-day get_price_history window N-1 points, and the demo recordings agree.
 
 The seeder writes one row per day at ``now - 90 .. now - 1`` days. ``get_price_history`` keeps
 ``recorded_at >= NOW() - 60 days``, so the row seeded at exactly ``now - 60 days`` is already outside the window

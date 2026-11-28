@@ -178,8 +178,11 @@ quoted in an answer was then checked against the database. The return journey no
 **A leak the specs caught.** Fixing the stale e2e assertions turned up a real one: the admin and seller greetings said
 "I'm your customer support orchestrator", because the prompt's first line named the role and told the model to introduce
 itself. The prompt now says shopping assistant and forbids the words; the demo set (160 fixtures) and the orchestrator
-eval fixtures were re-recorded, unreachable eval fixtures removed with a one-off hit log (not committed), every baseline
-reproduced, and an audit of every recorded reply found no internals and no wrong "couldn't find".
+eval fixtures were re-recorded, every baseline
+reproduced, and an audit of every recorded reply found no internals and no wrong "couldn't find". A one-off hit log
+(not committed) suggested 42 eval fixtures were unreachable; removing them broke the MCP comparison in CI, which
+replays through the MCP servers and which `replay-evals.sh` does not run. They are restored, and the MCP path's
+product-discovery fixtures re-recorded for the seed change. Lesson: prune only against every fixture consumer.
 
 **Left for the owner.** The CHANGELOG's Unreleased "Added" list carried duplicate bullets before this branch (the
 merchant-ops entry three times, and others twice); worth a cleanup before cutting 1.5.0. Cut v1.5.0 after merge so
