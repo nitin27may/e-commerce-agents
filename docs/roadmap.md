@@ -3,7 +3,7 @@
 This page lists what is planned next for E-Commerce Agents, what each release shipped, and what is
 deliberately not planned. It is for anyone deciding whether the project covers what they need today.
 
-The current release is **1.4.0** (2026-11-21); **1.5.0 is staged** on `main` and not yet cut. Both backends, Python and .NET, run
+The current release is **1.5.0** (2026-11-28). Both backends, Python and .NET, run
 end to end: an orchestrator and five specialist agents (plus an opt-in, Python-only merchant-ops specialist), auth, telemetry, and one
 Next.js frontend that either backend serves. The storefront is public: anyone can browse, search and use the AI shopping
 assistant (`/shop`) without an account, while cart checkout, orders, tracking and returns require
@@ -148,9 +148,9 @@ One pattern has shaped every release: the reported problem was smaller than the 
 the difference was found by running something rather than reading it. The nine cases are in
 [Reported vs actual](reported-vs-actual.md).
 
-### v1.5 (staged on `main`, not yet released; as of 2026-11-24)
+### v1.5
 
-The [changelog](https://github.com/nitin27may/e-commerce-agents/blob/main/CHANGELOG.md) `[Unreleased]` section has the entries and the known limits.
+Released as 1.5.0 (2026-11-28); the [changelog](https://github.com/nitin27may/e-commerce-agents/blob/main/CHANGELOG.md) has the entries and the known limits.
 
 - **Customer confirmation before a gated action** ([#302](https://github.com/nitin27may/e-commerce-agents/issues/302), [#307](https://github.com/nitin27may/e-commerce-agents/issues/307)), on both stacks: the customer confirms the exact action in plain words before it parks for staff ([approvals.md](approvals.md)).
 - **Merchant-ops specialist and a PO-value manager tier** ([#298](https://github.com/nitin27may/e-commerce-agents/issues/298), Python): an opt-in sixth specialist that explains seller proposals and triages reviews, and a restock batch over a threshold that routes to a manager ([merchant-proposals.md](merchant-proposals.md)).
@@ -161,6 +161,8 @@ The [changelog](https://github.com/nitin27may/e-commerce-agents/blob/main/CHANGE
 - **Pricing in one file, a token budget and a turn-level cost ceiling:** no price is written in code on either stack ([configuration.md](configuration.md)).
 - **A keyless stack-parity gate in CI** and gateway attribution headers on every model call.
 - **Four more course chapters** (33 to 36: prompt injection and red team, structured output, memory, model providers), 38 in all.
+- **A one-command Azure deployment, run for real:** `scripts/azure-up.sh` deployed the small profile from a clean subscription, passed its sanity check, and `azure-down.sh` left nothing behind ([azure-deployment.md](azure-deployment.md)).
+- **No agent internals in the storefront chat:** every role sees answers and cards only; agent and tool names, the graph, the mode switcher and Compare live in the staff-only Lab (`/lab`). Recorded demo journeys ship in the images.
 - **Azure options, offline only:** the reference profile, per-app identities, an AI gateway and a Foundry project in Bicep ([azure-deployment.md](azure-deployment.md)).
 
 ### v1.4

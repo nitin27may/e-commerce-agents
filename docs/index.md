@@ -66,17 +66,17 @@ Each explains the same ideas at a different depth, and each says where to go nex
 
 ## Where the project is
 
-**v1.4 is the latest release.** Both backends are live and stable; the pause-and-resume approval loop, server-side grounding, idempotency on money-moving actions, rate limiting and the five orchestration modes all ship on Python and .NET.
+**v1.5 is the latest release.** Both backends are live and stable; the pause-and-resume approval loop, server-side grounding, idempotency on money-moving actions, rate limiting and the five orchestration modes all ship on Python and .NET.
 
-### New in 1.4
+### New in 1.5
 
 See the [roadmap]({{ site.baseurl }}/getting-started/roadmap.html) and the [changelog](https://github.com/nitin27may/e-commerce-agents/blob/main/CHANGELOG.md) for the full entries:
 
-- **A2A 1.0** on both stacks: JSON-RPC at `/a2a/v1`, an agent card, and a signed user-context token, beside the original wire.
-- **Approvals**: one inbox and one decide path, routed by policy, with SLA timers run by an outbox worker.
-- **Merchant proposals, event autonomy and the return lifecycle** (Python): what the system may do on its own, under budgets, with every action logged and reversible.
-- **An Anthropic provider** and a separately configured embeddings provider.
-- **A DevUI entry point** for browsing the specialists and workflows.
+- **A one-command Azure deployment** (`scripts/azure-up.sh`), run and torn down from a clean subscription.
+- **No agent internals in the storefront chat**, for any role; staff watch the machinery in the Lab (`/lab`).
+- **Recorded demo journeys** in the images: `./scripts/dev.sh --demo --no-key` answers its suggested prompts with no key.
+- **Customer confirmation before a gated action**, on both stacks.
+- **Evals that can run live**, twelve run profiles, and four more course chapters (38 in all).
 
 ### Coming next
 

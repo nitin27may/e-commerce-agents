@@ -136,9 +136,8 @@ course, get the same chat with everything shown at **Lab** (`/lab`): sign in as 
     <img src="images/runs-approve.jpg" alt="Runs page as an admin: the paused return expanded, with Approve and Reject buttons, above the tour's other runs" width="820"/>
 
     A smaller return is routed to support instead: ask as `alice.johnson@gmail.com` to return a specific delivered
-    order of about $50 and it appears in `support.demo@gmail.com`'s inbox. The released 1.4.0 images predate the
-    inbox fix: there, **Approvals** is admin-only and lists tool approvals only, so decide from **Runs** as an
-    admin. See [approvals](approvals.md).
+    order of about $50 and it appears in `support.demo@gmail.com`'s inbox.
+    See [approvals](approvals.md).
 
 ---
 

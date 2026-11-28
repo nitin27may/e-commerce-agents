@@ -136,7 +136,8 @@ cd e-commerce-agents
 
 Open **http://localhost:3000** and sign in as `tour@example.com` / `tour123`. Browsing, search, cart and checkout
 work, and the chat replays recorded answers for its suggested prompts (the journeys in the clips above). Docker is
-the only requirement; the first build takes about twelve minutes. PowerShell: `./scripts/dev.ps1 -NoKey`.
+the only requirement; the first build takes about twelve minutes, or add `--demo` to pull the released images
+instead (about a minute). PowerShell: `./scripts/dev.ps1 -NoKey`.
 
 **With a model key:**
 
@@ -146,9 +147,8 @@ cp .env.minimal .env          # set OPENAI_API_KEY, the only variable a first ru
 ```
 
 Then sign in as `alice.johnson@gmail.com` / `customer123`. `--demo` pulls the eleven released images from GitHub
-Container Registry, published for `linux/amd64` and `linux/arm64`. The released 1.4.0 images carry no recordings,
-so `--demo --no-key` answers every chat prompt with "not recorded" until the next release; use `--no-key` alone
-until then. A local model through Ollama also needs no paid key: see
+Container Registry, published for `linux/amd64` and `linux/arm64`. `--demo --no-key` does the same with no key: the
+images carry the recorded answers, so the chat answers its suggested prompts. A local model through Ollama also needs no paid key: see
 [docs/quick-start.md](docs/quick-start.md#run-without-a-paid-api-key).
 
 **Building from source with a key** — drop the flag. This is the contributor path, and the one to use
