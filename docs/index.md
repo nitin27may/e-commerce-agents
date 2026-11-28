@@ -80,7 +80,7 @@ See the [roadmap]({{ site.baseurl }}/getting-started/roadmap.html) and the [chan
 
 ### Coming next
 
-- **Azure** — the Container Apps deployment is written and checked offline but has not run against a real subscription yet; that first deploy, then Foundry as a model provider.
+- **Azure** — the one-command Container Apps deployment (`scripts/azure-up.sh`) has run from a clean subscription ([Deploy to Azure]({{ site.baseurl }}/getting-started/azure-deployment.html)). Next: the Foundry features that need an Azure credential, and measured costs for the larger profiles.
 - **A model-calling parity run** — the keyless parity gate already runs in CI (`stack-parity.yml`); the live dual-backend browser suite (`scripts/e2e-both-stacks.sh`) still runs locally.
 - **.NET eval suite** — 6 of 7 datasets ported; the recording run, baselines and CI gate remain.
 

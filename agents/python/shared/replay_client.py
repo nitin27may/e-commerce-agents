@@ -180,6 +180,9 @@ def _canonical_request(messages: Any, options: dict[str, Any] | None) -> dict[st
 # Volatile values that live in tool-result payloads. Both are database-derived
 # and differ on every reseed, which is the whole reason _normalize_for_hash
 # exists — see its docstring.
+# A parked call's reply cites its approval as "(ref: <first 8 hex of a random id>)" (shared/hitl.py). The full id is
+# already scrubbed as a UUID; the short form was not, so no recording of a parked action could ever replay.
+_SHORT_REF_RE = re.compile(r"\(ref: [0-9a-f]{8}\)")
 _UUID_RE = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 # Anchored, and longest-match-first: a full timestamp is consumed before the
 # bare-month arm can nibble its leading "YYYY-MM". The month arm exists because
@@ -226,6 +229,7 @@ def _scrub(value: Any) -> Any:
     if isinstance(value, str):
         value = _MONTH_BUCKETS_RE.sub('"monthly_data": "<buckets>"', value)
         value = _TREND_RE.sub('"trend": "<trend>"', value)
+        value = _SHORT_REF_RE.sub("(ref: <ref>)", value)
         return _TIMESTAMP_RE.sub("<ts>", _UUID_RE.sub("<uuid>", value))
     if isinstance(value, list):
         return [_scrub(v) for v in value]

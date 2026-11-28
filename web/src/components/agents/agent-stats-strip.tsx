@@ -37,27 +37,27 @@ export function AgentStatsStrip({ backendName, stats }: AgentStatsStripProps) {
 
   return (
     <section>
-      <h2 className="mb-3 text-sm font-semibold text-foreground">
+      <h2 className="mb-3 text-base font-semibold text-foreground">
         Last 30 days
       </h2>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
           label="Invocations"
           value={invocations === 0 && stats !== null ? "0" : invocations === 0 ? "—" : invocations.toLocaleString()}
           icon={Activity}
-          hint="total requests"
+          hint="Total requests"
         />
         <StatCard
-          label="Avg latency"
+          label="Avg. latency"
           value={formatDuration(avgMs)}
           icon={Zap}
-          hint="end-to-end"
+          hint="End to end"
         />
         <StatCard
           label="Tokens used"
           value={formatTokens(tokens)}
           icon={Layers}
-          hint="in + out"
+          hint="In and out"
         />
       </div>
     </section>

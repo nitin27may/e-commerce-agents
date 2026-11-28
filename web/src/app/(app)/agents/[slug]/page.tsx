@@ -1,5 +1,6 @@
 import { AGENTS } from "@/lib/agents";
 import { AgentDetailClient } from "./agent-detail-client";
+import { StaffOnly } from "@/components/staff-only";
 
 export function generateStaticParams() {
   return AGENTS.map((a) => ({ slug: a.slug }));
@@ -12,5 +13,9 @@ export default async function AgentDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  return <AgentDetailClient slug={slug} />;
+  return (
+    <StaffOnly>
+      <AgentDetailClient slug={slug} />
+    </StaffOnly>
+  );
 }

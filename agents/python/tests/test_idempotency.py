@@ -332,6 +332,33 @@ async def test_execute_approved_action_process_refund_operates_on_the_real_retur
     assert row["status"] == "refunded"
 
 
+async def test_execute_approved_action_initiate_return_issues_a_label_and_refund_amount(db_pool: asyncpg.Pool) -> None:
+    """A return approved by staff must give the customer what a directly initiated one does: a printable label
+    and the refund amount. The approved path used to insert neither, so every return over the approval threshold
+    ended with nothing to ship the item back with."""
+    from shared.hitl import execute_approved_action
+    from shared.return_label import is_well_formed
+
+    user_id = await _seed_user(db_pool, email="label@example.com")
+    order_id = await _seed_order(db_pool, user_id, status="delivered", total=749.97)
+
+    result = await execute_approved_action(
+        tool_name="initiate_return",
+        tool_input={"order_id": str(order_id), "reason": "Stopped working", "refund_method": "original_payment"},
+        user_email="label@example.com",
+    )
+
+    assert result["success"] is True
+    row = await db_pool.fetchrow(
+        "SELECT return_label_url, refund_amount, status FROM returns WHERE order_id = $1", order_id
+    )
+    assert row["status"] == "approved"
+    assert float(row["refund_amount"]) == 749.97
+    assert row["return_label_url"] == result["return_label_url"]
+    token = row["return_label_url"].removeprefix("/api/returns/").removesuffix("/label")
+    assert is_well_formed(token)
+
+
 async def test_execute_approved_action_process_refund_is_guarded_against_double_execution(
     db_pool: asyncpg.Pool,
 ) -> None:

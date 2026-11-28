@@ -109,10 +109,10 @@ test.describe("Rich Chat", () => {
 
     // Response should contain formatted elements (markdown renders as <strong>, <ul>, <li>, etc.)
     // At minimum we should see the response text is not just raw text
-    const responseArea = page.locator('[class*="prose"]').first();
-    // prose class indicates markdown rendering
+    const responseArea = page.getByTestId("assistant-text").first();
+    // assistant-text wraps the rendered markdown
     const hasProse = await responseArea.isVisible().catch(() => false);
-    // If prose is not visible, the response is still rendered (just without structured blocks)
+    // If it is not visible, the response is still rendered (just without structured blocks)
     expect(true).toBeTruthy(); // Response rendered successfully
   });
 });
@@ -187,8 +187,9 @@ test.describe("Fixed Pages", () => {
       await firstOrder.click();
       await page.waitForURL(/\/orders\//);
       // Items should have product names (not empty)
+      // The items load after the page shell: wait for the first row instead of counting at once.
       const productNames = page.locator("td").filter({ hasText: /.{3,}/ });
-      expect(await productNames.count()).toBeGreaterThan(0);
+      await expect(productNames.first()).toBeVisible({ timeout: 10000 });
     }
   });
 

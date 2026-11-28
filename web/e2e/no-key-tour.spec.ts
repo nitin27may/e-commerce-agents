@@ -67,7 +67,7 @@ async function apiCall(page: Page, method: string, path: string): Promise<{ stat
 
 /** The last assistant answer's rendered text. */
 async function lastAnswer(page: Page): Promise<string> {
-  const rendered = page.locator('[class*="prose"]').last();
+  const rendered = page.getByTestId("assistant-text").last();
   await expect(rendered).toBeVisible({ timeout: 10_000 });
   return ((await rendered.textContent()) ?? "").trim();
 }

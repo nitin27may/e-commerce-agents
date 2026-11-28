@@ -125,15 +125,17 @@ internal static class HitlActionExecutor
                 {
                     return Failure("Order not found.");
                 }
-                // NOT EXISTS: a second run must not insert a second returns row for the same order.
+                // An approved return gets what a directly initiated one gets: a printable label and the refund
+                // amount (matches the Python executor). NOT EXISTS: a second run must not insert a second row.
+                var labelUrl = $"/api/returns/{ReturnLabelToken.New()}/label";
                 var returnId = await conn.QueryFirstOrDefaultAsync<Guid?>(
-                    @"INSERT INTO returns (order_id, user_id, reason, status, refund_method)
-                      SELECT o.id, o.user_id, @reason, 'approved', @refundMethod
+                    @"INSERT INTO returns (order_id, user_id, reason, status, refund_method, return_label_url, refund_amount)
+                      SELECT o.id, o.user_id, @reason, 'approved', @refundMethod, @labelUrl, o.total
                       FROM orders o JOIN users u ON o.user_id = u.id
                       WHERE o.id = @id AND u.email = @email
                         AND NOT EXISTS (SELECT 1 FROM returns r WHERE r.order_id = o.id)
                       RETURNING id",
-                    new { id = orderGuid, email = userEmail, reason, refundMethod }
+                    new { id = orderGuid, email = userEmail, reason, refundMethod, labelUrl }
                 );
                 if (returnId is null)
                 {
@@ -151,6 +153,7 @@ internal static class HitlActionExecutor
                 return Success(new Dictionary<string, object?>
                 {
                     ["return_id"] = returnId.Value.ToString(),
+                    ["return_label_url"] = labelUrl,
                     ["message"] = "Return approved and initiated.",
                 });
             }

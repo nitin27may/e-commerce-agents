@@ -58,19 +58,19 @@ chips:
     new_conversation: true
 
   - id: handoff-order
-    label: Handoff mesh - track my order
+    label: When will my order arrive?
     prompt: Where is my Patagonia Better Sweater order and when will it arrive?
     mode: handoff
     new_conversation: true
 
   - id: pre-purchase
-    label: Pre-purchase research
+    label: Is now a good time to buy the XM5?
     prompt: I am thinking of buying the Sony WH-1000XM5. Is it a good time to buy?
     mode: "workflow:pre-purchase"
     new_conversation: true
 
   - id: group-chat
-    label: Round-table debate
+    label: Is the XM5 worth the price?
     prompt: Is the Sony WH-1000XM5 worth its price?
     mode: group-chat
     new_conversation: true

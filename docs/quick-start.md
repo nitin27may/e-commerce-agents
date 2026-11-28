@@ -201,7 +201,7 @@ docker compose --profile seed --profile agents --profile frontend up --build
 
 Sign in with any seeded account — `alice.johnson@gmail.com` / `customer123` is a customer with
 order history, which makes the demo scenarios more interesting than a fresh account. The full list
-is in the [README's Test Users table](https://github.com/nitin27may/e-commerce-agents#test-users).
+is in the [demo guide's Test Users table](demo-guide.md#test-users).
 
 You can also browse the catalog and use the shopping assistant at `/shop` **without signing in** —
 product discovery is served anonymously.
@@ -294,7 +294,7 @@ symptom is a confident, well-formed, wrong answer. Ollama's own documentation re
 > tool sequence, correct arithmetic, clean termination. That is one scenario, not a benchmark:
 > treat it as evidence that the 9B-and-up class is viable here, not as a ranking.
 >
-> If answers look plausible but the agent timeline shows no tool calls, that is the symptom of a
+> If answers look plausible but the agent timeline in the staff Lab (`/lab`) shows no tool calls, that is the symptom of a
 > model that cannot hold up.
 
 {: .warning }

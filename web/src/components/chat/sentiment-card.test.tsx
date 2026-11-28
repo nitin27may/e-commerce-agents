@@ -12,8 +12,8 @@ describe("ChatSentimentCard", () => {
           average_rating: 4.7,
           total_reviews: 15,
           rating_distribution: { "5": 10, "4": 3, "3": 1, "2": 1, "1": 0 },
-          pros: ["Quality", "Comfortable"],
-          cons: ["Expensive"],
+          pros: ["Great noise cancelling", "Comfortable"],
+          cons: ["Expensive for what it is"],
         }}
       />
     );
@@ -21,8 +21,20 @@ describe("ChatSentimentCard", () => {
     expect(screen.getByText("Positive")).toBeInTheDocument();
     expect(screen.getByText("4.7")).toBeInTheDocument();
     expect(screen.getByText("from 15 reviews")).toBeInTheDocument();
-    expect(screen.getByText("Quality")).toBeInTheDocument();
-    expect(screen.getByText("Expensive")).toBeInTheDocument();
+    expect(screen.getByText("Great noise cancelling")).toBeInTheDocument();
+    expect(screen.getByText("Expensive for what it is")).toBeInTheDocument();
+    // A one-word "pro" says nothing to a shopper.
+    expect(screen.queryByText("Comfortable")).not.toBeInTheDocument();
+  });
+
+  it("hides a pros list made only of single words, and shows one column for the list that remains", () => {
+    render(
+      <ChatSentimentCard
+        data={{ product_name: "Dyson V15 Detect", average_rating: 4.1, pros: ["Great", "Best", "Fast"], cons: ["Loud at full power"] }}
+      />
+    );
+    expect(screen.queryByText("Pros")).not.toBeInTheDocument();
+    expect(screen.getByText("Loud at full power")).toBeInTheDocument();
   });
 
   it("renders the trend and risk badges when present", () => {
@@ -37,7 +49,7 @@ describe("ChatSentimentCard", () => {
       />
     );
     expect(screen.getByText("Declining")).toBeInTheDocument();
-    expect(screen.getByText("High Risk")).toBeInTheDocument();
+    expect(screen.getByText(/Many reviews look suspicious/)).toBeInTheDocument();
     expect(screen.getByText(/4 reviews flagged as potentially fake/)).toBeInTheDocument();
   });
 

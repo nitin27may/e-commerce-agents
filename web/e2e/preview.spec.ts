@@ -72,7 +72,7 @@ test("preview: banner, sign-in without a backend, every tour chip answers, an un
       await waitForTurn(page);
 
       await expect(page.getByTestId("replay-miss-callout")).toHaveCount(0);
-      const answer = page.locator('[class*="prose"]').last();
+      const answer = page.getByTestId("assistant-text").last();
       await expect(answer).toBeVisible();
       expect(((await answer.textContent()) ?? "").trim().length, `${chip.id} answered nothing`).toBeGreaterThan(20);
 

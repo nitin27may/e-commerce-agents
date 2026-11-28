@@ -19,7 +19,7 @@
 #
 # Environment: FRONTEND_URL, E2E_STAFF_PASSWORD (admin, support), SMOKE_CUSTOMER_PASSWORD (default customer123),
 # AZURE_RESOURCE_GROUP, DB_INIT_JOB_NAME, SMOKE_FIRST_FRAME_SECONDS (15), SMOKE_MIN_FRAMES (10), SMOKE_WAIT_SECONDS (300).
-# Not verified against a real subscription; the Azure-only steps (1) are the least certain.
+# azure-up.sh runs --quick against every deployment; the full run has been run against a real subscription (#263).
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.." || exit 1
 

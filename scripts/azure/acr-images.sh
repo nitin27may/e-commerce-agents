@@ -60,9 +60,10 @@ while IFS=$'\t' read -r name used_by context dockerfile build_args; do
         fi
         run az acr import --name "$REGISTRY" --source "${SOURCE}/${image}" --image "$image" --force
     else
-        # `az acr build --file` is relative to the build context, which is the positional argument.
+        # For a local source, `az acr build` reads --file relative to the working directory (the repository root
+        # here) and packs it into the uploaded context itself; a path relative to the context fails with
+        # "Unable to find 'Dockerfile'" (azure-cli 2.75, acr/build.py). So the path is passed as the table gives it.
         file="$dockerfile"
-        [ "$context" = "." ] || file="${dockerfile#"$context"/}"
         args=()
         if [ -n "$build_args" ]; then
             IFS=';' read -ra pairs <<<"$build_args"

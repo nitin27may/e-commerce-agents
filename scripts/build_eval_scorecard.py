@@ -213,7 +213,7 @@ def render_live(rows: list[LiveRow]) -> list[str]:
         "it excludes the judge calls.",
         "",
         "| Date | Setup | Model | Judge | k | Agent | Dataset | Cases | Passed | Groundedness | Correctness "
-        "| Completeness | Overall | Cost (USD) |",
+        "| Completeness | Overall | Est. cost (USD) |",
         "|------|-------|-------|-------|--:|-------|---------|------:|-------:|-------------:|------------:"
         "|-------------:|--------:|-----------:|",
     ]

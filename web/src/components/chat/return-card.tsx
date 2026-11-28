@@ -1,86 +1,76 @@
 "use client";
 
-import Link from "next/link";
-import { Download, RotateCcw, Package, Clock } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import { Download, ExternalLink, RotateCcw } from "lucide-react";
+import { StatusBadge, TONE_TEXT_CLASS, type SemanticTone } from "@/components/ui/status-badge";
 import { apiUrl } from "@/lib/api";
+import { formatPrice } from "@/lib/format";
+import type { ReturnData } from "@/lib/chat-schemas";
+import { CardAction, ChatCard } from "./chat-card";
+import { humanizeEnum } from "./card-format";
 
-interface ReturnData {
-  order_id?: string;
-  return_id?: string;
-  status?: string;
-  return_label_url?: string;
-  refund_amount?: number;
-  refund_method?: string;
-  refund_timeline?: string;
+const STATUS: Array<{ match: RegExp; title: string; tone: SemanticTone }> = [
+  { match: /pending|await|review/, title: "Return awaiting review", tone: "warning" },
+  { match: /reject|denied|declin/, title: "Return declined", tone: "destructive" },
+  { match: /complete|refunded|received|closed/, title: "Return complete", tone: "success" },
+  { match: /approved|initiated|requested|label|created|open/, title: "Return started", tone: "info" },
+];
+
+export function returnStatus(status: string | undefined): { title: string; tone: SemanticTone } {
+  const s = (status ?? "").toLowerCase();
+  return STATUS.find((entry) => entry.match.test(s)) ?? { title: "Return", tone: "neutral" };
 }
 
 export function ChatReturnCard({ data }: { data: ReturnData }) {
-  return (
-    <div className="my-2 max-w-md rounded-xl border border-warning/30 bg-warning/5 p-5 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <RotateCcw className="size-4 text-warning" />
-          <span className="font-semibold text-foreground">Return Initiated</span>
-        </div>
-        {data.status && (
-          <Badge variant="outline" className="border-warning/30 bg-warning/10 text-warning text-xs">
-            {data.status}
-          </Badge>
-        )}
-      </div>
+  const { title, tone } = returnStatus(data.status);
 
+  const footer = (data.return_label_url || data.order_id) && (
+    <>
       {data.return_label_url && (
-        <a
-          href={apiUrl(data.return_label_url)}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Button variant="outline" className="w-full gap-2 border-warning/40 text-warning hover:bg-warning/10">
-            <Download className="size-4" />
-            Download Return Label
-          </Button>
-        </a>
+        <CardAction icon={Download} href={apiUrl(data.return_label_url)} external>
+          Download return label
+        </CardAction>
       )}
-
-      <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-        <Package className="size-3.5" />
-        Print the label, pack your items, and drop off at any carrier location
-      </p>
-
-      <Separator className="bg-warning/20" />
-
-      <div className="space-y-1.5 text-sm">
-        {data.refund_amount != null && (
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Refund Amount</span>
-            <span className="font-medium text-success">${data.refund_amount.toFixed(2)}</span>
-          </div>
-        )}
-        {data.refund_method && (
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Refund Method</span>
-            <span className="text-foreground">{data.refund_method.replace(/_/g, " ")}</span>
-          </div>
-        )}
-        {data.refund_timeline && (
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Timeline</span>
-            <span className="flex items-center gap-1 text-foreground">
-              <Clock className="size-3" />
-              {data.refund_timeline}
-            </span>
-          </div>
-        )}
-      </div>
-
       {data.order_id && (
-        <Link href={`/orders/${data.order_id}`} className="block text-center text-xs text-primary hover:underline mt-2">
-          View Order Details
-        </Link>
+        <CardAction icon={ExternalLink} href={`/orders/${data.order_id}`} external>
+          View order
+        </CardAction>
       )}
-    </div>
+    </>
+  );
+
+  const rows: Array<[string, React.ReactNode]> = [];
+  if (data.refund_amount != null) {
+    rows.push(["Refund", <span key="amount" className={`font-medium tabular-nums ${TONE_TEXT_CLASS.success}`}>{formatPrice(data.refund_amount)}</span>]);
+  }
+  if (data.refund_method) rows.push(["Refund to", humanizeEnum(data.refund_method)]);
+  if (data.refund_timeline) rows.push(["Expected", data.refund_timeline]);
+
+  return (
+    <ChatCard
+      icon={RotateCcw}
+      title={title}
+      meta={data.status && <StatusBadge label={humanizeEnum(data.status)} tone={tone} />}
+      footer={footer || undefined}
+    >
+      {(rows.length > 0 || !!data.return_label_url) && (
+        <>
+          {rows.length > 0 && (
+            <dl className="space-y-1.5 text-sm">
+              {rows.map(([label, value]) => (
+                <div key={label} className="flex items-center justify-between gap-4">
+                  <dt className="text-muted-foreground">{label}</dt>
+                  <dd className="text-right text-foreground">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {data.return_label_url && (
+            <p className="text-xs text-muted-foreground">
+              Print the label, pack the items and drop the parcel at any carrier location.
+            </p>
+          )}
+        </>
+      )}
+    </ChatCard>
   );
 }

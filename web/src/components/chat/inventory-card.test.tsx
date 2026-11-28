@@ -19,15 +19,44 @@ describe("ChatInventoryCard", () => {
       />
     );
     expect(screen.getByText("Sony WH-1000XM5")).toBeInTheDocument();
-    expect(screen.getByText("In Stock")).toBeInTheDocument();
+    expect(screen.getByText("In stock")).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
+    expect(screen.getByText(/units available across 2 warehouses/)).toBeInTheDocument();
     expect(screen.getByText("East DC")).toBeInTheDocument();
     expect(screen.getByText(/12 \(low\)/)).toBeInTheDocument();
   });
 
-  it("renders Out of Stock in a destructive tone", () => {
+  it("renders out of stock in a destructive tone, without a zero tile", () => {
     render(<ChatInventoryCard data={{ product_name: "Widget", in_stock: false, total_quantity: 0 }} />);
-    expect(screen.getByText("Out of Stock").className).toContain("text-destructive");
+    expect(screen.getByText("Out of stock").className).toContain("text-destructive");
+    // The badge already says it; no 24px "0" tile and no second line repeating it.
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
+    expect(screen.queryByText("Out of stock in every warehouse")).not.toBeInTheDocument();
+  });
+
+  it("says out of stock in one line when there is no stock badge", () => {
+    render(<ChatInventoryCard data={{ total_quantity: 0 }} />);
+    expect(screen.getByText("Out of stock in every warehouse").className).toContain("text-destructive");
+  });
+
+  it("says out of stock for a zero-quantity warehouse instead of '0 (low)'", () => {
+    render(
+      <ChatInventoryCard
+        data={{ warehouses: [{ warehouse: "Central Warehouse", region: "central", quantity: 0, low_stock: true }] }}
+      />
+    );
+    expect(screen.queryByText(/0 \(low\)/)).not.toBeInTheDocument();
+    expect(screen.getByText("Out of stock").className).toContain("text-destructive");
+    // The region is already in the warehouse name, so it gets no column of its own.
+    expect(screen.queryByText("Region")).not.toBeInTheDocument();
+  });
+
+  it("titles a card without a product name by what it shows", () => {
+    const { unmount } = render(<ChatInventoryCard data={{ warehouses: [{ warehouse: "East", quantity: 3 }] }} />);
+    expect(screen.getByText("Stock availability")).toBeInTheDocument();
+    unmount();
+    render(<ChatInventoryCard data={{ shipping_options: [{ carrier: "Express Shipping", price: 14.99 }] }} />);
+    expect(screen.getByText("Shipping options")).toBeInTheDocument();
   });
 
   it("renders upcoming restocks when get_restock_schedule was also called", () => {
@@ -40,7 +69,7 @@ describe("ChatInventoryCard", () => {
       />
     );
     expect(screen.getByText("Upcoming restocks")).toBeInTheDocument();
-    expect(screen.getByText("2026-09-01")).toBeInTheDocument();
+    expect(screen.getByText("Sep 1, 2026")).toBeInTheDocument();
   });
 
   it("renders sparsely when only a product name is given", () => {
@@ -60,26 +89,33 @@ describe("ChatInventoryCard", () => {
 
     it("renders each option with carrier, price, and delivery window", () => {
       render(<ChatInventoryCard data={shippingData} onAction={() => {}} />);
-      expect(screen.getByText(/ships from East DC/)).toBeInTheDocument();
+      expect(screen.getByText(/ships from East DC/i)).toBeInTheDocument();
       expect(screen.getByText("Standard Shipping", { exact: false })).toBeInTheDocument();
       expect(screen.getByText("$5.99")).toBeInTheDocument();
       expect(screen.getByText("5-7 business days")).toBeInTheDocument();
       expect(screen.getByText("$24.99")).toBeInTheDocument();
     });
 
-    it("calls onAction with a natural-language confirmation when Select is clicked", async () => {
+    it("calls onAction with a natural-language confirmation when Choose is clicked, and marks the choice", async () => {
       const onAction = vi.fn();
       render(<ChatInventoryCard data={shippingData} onAction={onAction} />);
-      const selectButtons = screen.getAllByRole("button", { name: "Select" });
-      await userEvent.click(selectButtons[1]);
+      const chooseButtons = screen.getAllByRole("button", { name: "Choose" });
+      await userEvent.click(chooseButtons[1]);
       expect(onAction).toHaveBeenCalledWith(
         "I'll go with Overnight Shipping (overnight) shipping for $24.99, 1 business day."
       );
+      expect(screen.getByRole("button", { name: "Chosen" })).toHaveAttribute("aria-pressed", "true");
     });
 
-    it("omits Select buttons when no onAction is provided (read-only render)", () => {
+    it("does not repeat the speed tier the carrier name already says", () => {
       render(<ChatInventoryCard data={shippingData} />);
-      expect(screen.queryByRole("button", { name: "Select" })).not.toBeInTheDocument();
+      expect(screen.getByText("Standard Shipping")).toBeInTheDocument();
+      expect(screen.queryByText(/· standard/)).not.toBeInTheDocument();
+    });
+
+    it("omits Choose buttons when no onAction is provided (read-only render)", () => {
+      render(<ChatInventoryCard data={shippingData} />);
+      expect(screen.queryByRole("button", { name: "Choose" })).not.toBeInTheDocument();
     });
   });
 });

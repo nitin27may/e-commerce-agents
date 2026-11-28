@@ -31,11 +31,11 @@ const decision = (over: Partial<AutonomyDecision> = {}): AutonomyDecision => ({
 describe("DecisionCard", () => {
   it("shows what was done, why and the budget it drew on", () => {
     render(<DecisionCard decision={decision()} onReverse={vi.fn()} />);
-    expect(screen.getByText(/goodwill credit \$5\.00 for alice@example.com/)).toBeTruthy();
+    expect(screen.getByText(/Goodwill credit \$5\.00 for alice@example.com/)).toBeTruthy();
     expect(screen.getByText("Done by the system")).toBeTruthy();
     expect(screen.getByText("Acted alone")).toBeTruthy();
     expect(screen.getByText("A small credit for a delay of at least two days")).toBeTruthy();
-    expect(screen.getByText(/Drew \$5\.00 from the goodwill credit budget for 2026-11-16/)).toBeTruthy();
+    expect(screen.getByText(/Drew \$5\.00 from the goodwill credit budget for Nov 16, 2026/)).toBeTruthy();
   });
 
   it("reverses only after a confirmation, passing the note", async () => {
@@ -105,7 +105,7 @@ describe("DecisionCard for the newer events", () => {
         onReverse={vi.fn()}
       />,
     );
-    expect(screen.getByText(/price adjustment \$5\.00 for alice@example.com/)).toBeTruthy();
+    expect(screen.getByText(/Price adjustment \$5\.00 for alice@example.com/)).toBeTruthy();
     expect(screen.getByText(/Widget · paid \$100\.00, now \$95\.00/)).toBeTruthy();
   });
 
@@ -122,7 +122,7 @@ describe("DecisionCard for the newer events", () => {
         onReverse={vi.fn()}
       />,
     );
-    expect(screen.getByText("back-in-stock notice for alice@example.com")).toBeTruthy();
+    expect(screen.getByText("Back-in-stock notice for alice@example.com")).toBeTruthy();
     expect(screen.getByText("This customer already received the most notices allowed today")).toBeTruthy();
   });
 
@@ -178,7 +178,7 @@ describe("DecisionCard for order risk and damaged items (#299)", () => {
 
   it("shows the score, the signals and that the order is on hold, without calling the order total a payment", () => {
     render(<DecisionCard decision={risk()} onReverse={vi.fn()} />);
-    expect(screen.getByText("order risk review for alice@example.com")).toBeTruthy();
+    expect(screen.getByText("Order risk review for alice@example.com")).toBeTruthy();
     expect(screen.getByText("Waiting for review")).toBeTruthy();
     expect(screen.getByText(/Risk score 70 of 100 for an order of \$600\.00/)).toBeTruthy();
     expect(screen.getByText("large order (+20)")).toBeTruthy();
@@ -242,7 +242,7 @@ describe("DecisionCard for order risk and damaged items (#299)", () => {
         onReverse={vi.fn()}
       />,
     );
-    expect(screen.getByText(/damaged-item remedy \$12\.00 for alice@example.com/)).toBeTruthy();
+    expect(screen.getByText(/Damaged-item remedy \$12\.00 for alice@example.com/)).toBeTruthy();
     expect(screen.getByText(/Kettle · 2 damaged · free replacement offered/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Reverse" })).toBeTruthy();
   });

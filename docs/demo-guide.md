@@ -24,9 +24,9 @@ again. The stack stays up either way.
 Sign in as `tour@example.com` / `tour123`: a dedicated account whose orders the tour depends on, with
 a delivered order over $500 for the return flow. **Reset demo** in the chat puts it back after a run.
 `alice.johnson@gmail.com` / `customer123` also has recordings, for the scenarios listed under Demo Scenarios
-below (1 to 8, the handoff and pre-purchase prompts of 9, and the Allbirds prompts the demo clip uses). It also has
-the prompts the Playwright specs send (the greeting for five accounts, the generative-UI, shopping, follow-up and
-grounding prompts); the key-free Playwright run is `E2E_NO_KEY=1 pnpm exec playwright test`, and it reports the
+below (1 to 8, the handoff and pre-purchase prompts of 9, and a short Allbirds conversation), for the README clips,
+and for the prompts the Playwright specs send (the greeting for five accounts, the generative-UI, shopping, follow-up
+and grounding prompts); the key-free Playwright run is `E2E_NO_KEY=1 pnpm exec playwright test`, and it reports the
 tests that send an unrecorded prompt as skipped. Other accounts and reworded prompts miss.
 
 The recordings are `agents/python/demo/fixtures/replay/`, and `agents/python/demo/fixtures/manifest.json` says which
@@ -37,9 +37,9 @@ so run the tour from a fresh stack (`--clean`) or use **Reset demo**. The same g
 recording was made on a fresh seed. And the two workflow modes, pre-purchase and
 return-and-replace, call no model, so there is nothing recorded for them and nothing to miss.
 
-The README clip and the stills in these docs are recorded on this stack by `scripts/record-demo.sh` (the clip)
-and `scripts/record-demo.sh --stills` (the stills), driven by `web/e2e/readme-gif.spec.ts`; both need ffmpeg and
-skip unless `RECORD_MEDIA=1`, which the script sets.
+The GIFs and videos in these docs are recorded on this stack by `scripts/record-media.sh`, driven by
+`web/e2e/demo-media.spec.ts`. How to re-record them, and the capture settings, are in
+[scripts/demo/README.md](https://github.com/nitin27may/e-commerce-agents/blob/main/scripts/demo/README.md).
 
 ## Test Users
 
@@ -54,8 +54,10 @@ Pre-seeded accounts for testing different roles. These credentials belong to the
 | `seller2.demo@gmail.com` | seller123 | Seller | Bronze |
 | `alice.johnson@gmail.com` | customer123 | Customer | Gold |
 | `bob.smith@gmail.com` | customer123 | Customer | Silver |
+| `power.demo@gmail.com` | power123 | Power user (a customer with access to every agent) | Gold |
+| `tour@example.com` | tour123 | Customer, for the no-key tour (reset with **Reset demo**) | Silver |
 
-`support` is a staff role: it reviews approvals that policy routes to support (`admin` acts as manager and can do everything support can). `power.demo@gmail.com` / `power123` is a `power_user` (a customer variant with access to every agent).
+`support` is a staff role: it reviews approvals that policy routes to support (`admin` acts as manager and can do everything support can).
 
 ---
 
@@ -76,7 +78,7 @@ Pre-seeded accounts for testing different roles. These credentials belong to the
 
 Try these in the chat after logging in:
 
-1. **Product Search**: "Find me wireless headphones under $300 with good noise cancellation"
+1. **Product Search**: "Find me noise-cancelling wireless headphones under $300"
 2. **Comparison**: "Compare the Sony WH-1000XM5 with AirPods Max"
 3. **Order Tracking**: "Where's my latest order?"
 4. **Return Flow**: "I want to return my last order"
@@ -90,109 +92,135 @@ A coupon works once per user. No seeded order carries a coupon code, so every de
 already used this coupon"; cancel the order to free it, or use another code. `/api/demo/reset` deletes the tour user's orders,
 so that account gets its coupons back; other accounts keep theirs used until the order is cancelled.
 
-### Switch the orchestration pattern
+### See how it works: the Lab
 
-The same orchestrator can coordinate the specialists five different ways. These three scenarios are
-the quickest way to see what that means:
+For every role, the storefront chat shows answers and cards, never the machinery. Staff, and developers following the
+course, get the same chat with everything shown at **Lab** (`/lab`): sign in as `admin.demo@gmail.com` /
+`admin123` or `support.demo@gmail.com` / `support123`.
 
-9. **Change the mode.** Above the chat composer, open the **Mode** dropdown and pick **Handoff Mesh**,
-   then ask "Where's my latest order?". Pick **Pre-Purchase Research** and ask "Should I buy the Sony
-   WH-1000XM5?". The mode's graph is drawn with the answer and highlights each node as it runs.
+9. **Change the mode.** In the Lab, open the **Mode** dropdown above the composer and pick **Pre-Purchase
+   Research**, then ask "I am thinking of buying the Sony WH-1000XM5. Is it a good time to buy?". The mode's graph
+   is drawn with the answer and lights up each node as it runs. Under every answer the Lab also lists the agents
+   that took part, each tool call with its timing, and the grounding report.
 
-    <img src="images/orchestration-graph-live.jpg" alt="Chat in Pre-Purchase Research mode: the fan-out graph drawn under the answer with the fan-out node finished and the rest still running" width="820"/>
+    <img src="images/orchestration-graph-live.jpg" alt="The Lab in Pre-Purchase Research mode: the fan-out graph drawn under the question, with the fan-out node finished and the three branches running" width="820"/>
 
-    *The graph mid-run: finished nodes turn green while the rest of the fan-out is still pending. The two
-    workflow modes call no model and finish in milliseconds, so this frame is from a take where the stream
-    frames are spaced out (`web/e2e/readme-gif.spec.ts`); with a live model the pacing is its latency.*
-10. **Compare modes on one prompt.** Click **Compare** beside the dropdown, enter one prompt and
-    select several modes. Each gets a result card with its answer, latency, tokens and estimated
-    cost, and the graph it took. Measured numbers are in the
-    [orchestration benchmark](orchestration-benchmark.md).
+    *The graph mid-run. The workflow modes call no model and finish in milliseconds, so the recording spaces out
+    the stream's frames (`web/e2e/demo-media.spec.ts`); with a live model the pacing is its latency.*
 
-    <img src="images/mode-compare.jpg" alt="Compare dialog: one prompt run through four orchestration modes, each card showing latency, steps, tokens, cost and the graph it took" width="820"/>
+    <img src="images/agent-timeline.jpg" alt="The Lab after a tool-routed turn: the agent activity list with pricing-promotions and inventory-fulfillment tool calls, each with its timing, and the grounding report" width="820"/>
+10. **Compare modes on one prompt.** Click **Compare** beside the dropdown, enter one prompt and select several
+    modes. Each gets a result card with its answer, latency, steps, tokens and estimated cost, and the graph it
+    took. Measured numbers are in the [orchestration benchmark](orchestration-benchmark.md). On the no-key stack
+    only the two workflow modes can answer, because Compare sends each model-backed mode a request of its own and
+    no recording matches it; with a key, all five answer.
 
-    *Four modes on a keyed stack.* On the no-key stack only the two workflow modes can answer here, because
-    Compare calls each model-backed mode with a request of its own and no recording matches it:
+    <img src="images/compare-dialog.jpg" alt="The Lab's Compare dialog on the no-key stack: pre-purchase research and return-and-replace side by side, each card showing its answer, latency, steps and the graph it took" width="820"/>
 
-    <img src="images/compare-dialog.jpg" alt="Compare dialog on the no-key stack: pre-purchase research and return-and-replace side by side, each card showing its answer, latency, steps and the graph it took" width="820"/>
-11. **Approve a paused return.** Sign in as `tour@example.com` / `tour123`, the account seeded with
-    a delivered order over the $500 approval threshold (Alice's most recent order is delivered too, but it
-    is a smaller return that policy may approve without a pause). Pick **Return & Replace** and ask "I want to return my last delivered
-    order". The run pauses at the policy gate, nothing is created, and the chat shows "Awaiting
-    staff review".
+### A return that needs a person
 
-    <img src="images/return-awaiting-approval.jpg" alt="Chat showing a return paused at the policy gate with an Awaiting staff review card and the workflow graph" width="820"/>
+11. **Approve a paused return.** Sign in as `tour@example.com` / `tour123`, the account seeded with a delivered
+    order over the $500 approval threshold, and click **Return my Dyson (needs approval)**. The run pauses at the
+    policy gate, nothing is created, and the chat shows "Awaiting staff review".
 
-    Sign in as a reviewer in another browser and open **Approvals**. This return is over half the
-    customer's lifetime spend, so policy routes it to a manager: use `admin.demo@gmail.com`.
-    Choose **Approve** or **Reject**. The run resumes from its checkpoint and finishes as the
-    customer; a rejected return leaves no return row behind. An admin can also decide from
-    **Runs**, where the run is marked "Needs approval".
+    <img src="images/return-awaiting-approval.jpg" alt="Chat showing a return paused at the policy gate with an Awaiting staff review notice" width="820"/>
 
-    A smaller return is routed to support instead. Ask as `alice.johnson@gmail.com` to return a
-    specific delivered order of about $50 and it appears in `support.demo@gmail.com`'s inbox:
+    Sign in as a reviewer in another browser and open **Approvals**. This return is over half the customer's
+    lifetime spend, so policy routes it to a manager: use `admin.demo@gmail.com`. **Show details** says why it was
+    routed there, what was asked for and the facts the policy checked. Choose **Approve** or **Reject**. The run
+    resumes from its checkpoint and finishes as the customer; a rejected return leaves no return row behind. An
+    admin can also decide from **Runs**, where the run is marked "Needs approval".
 
-    <img src="images/approvals-inbox.jpg" alt="Approvals inbox as a support reviewer: a pending return routed to support, with Reject and Approve buttons" width="820"/>
+    <img src="images/approvals-inbox.jpg" alt="Approvals inbox as an admin: a pending return with its details open, showing why it needs review, what was requested and what the policy checked" width="820"/>
 
-    <img src="images/runs-approve.jpg" alt="Runs page as an admin: the paused return expanded, with Approve and Reject buttons" width="820"/>
+    <img src="images/runs-approve.jpg" alt="Runs page as an admin: the paused return expanded, with Approve and Reject buttons, above the tour's other runs" width="820"/>
 
-    <img src="images/runs-approval.jpg" alt="Runs page as an admin on a fresh no-key stack: the tour user's return marked Needs approval and expanded to Approve and Reject, above seeded demo runs" width="820"/>
-
-    *The same page from a clean no-key take, regenerated by `scripts/record-demo.sh --stills`.*
-
-    The released 1.4.0 images predate the inbox fix: there, **Approvals** is admin-only and lists
-    tool approvals only, so decide from **Runs** as an admin. See [approvals](approvals.md).
+    A smaller return is routed to support instead: ask as `alice.johnson@gmail.com` to return a specific delivered
+    order of about $50 and it appears in `support.demo@gmail.com`'s inbox. The released 1.4.0 images predate the
+    inbox fix: there, **Approvals** is admin-only and lists tool approvals only, so decide from **Runs** as an
+    admin. See [approvals](approvals.md).
 
 ---
+
+## Journeys
+
+Each clip is recorded by `scripts/record-media.sh` on the no-key stack, so it is exactly what you get.
+
+<details open>
+<summary>Recorded journeys (click to collapse)</summary>
+
+**Shop and check out.** Product cards, a review summary, added to the cart from the chat, then checkout.
+
+<img src="images/hero.gif" alt="A shopper asks for noise-cancelling headphones, asks which has the best reviews, adds the Sony WH-1000XM5 to the cart from the chat, then checks out" width="820"/>
+
+**One question, two specialists.** "Is the Sony WH-1000XM5 a good deal right now, and is it in stock?" Pricing and
+promotions works out Alice's savings as a Gold member, inventory and fulfillment finds the nearest warehouse with
+stock, and the answer arrives as two cards.
+
+<img src="images/multi.gif" alt="One question answered as a savings card and a stock card" width="820"/>
+
+**A return that needs a person.** Alice gives a reason and confirms the exact return before anything happens; a
+manager approves it in the inbox; her order now shows the refund and a label to download and print.
+
+<img src="images/return.gif" alt="A return confirmed in the chat, approved in the approvals inbox, and the order page with a Download return label button" width="820"/>
+
+**Where is my order, and should I buy now.**
+
+<img src="images/order.gif" alt="The latest order answered as an order card" width="820"/>
+
+<img src="images/research.gif" alt="A pre-purchase question answered with reviews, stock, price trend and shipping in one list" width="820"/>
+
+**The Lab.** The same chat with its machinery shown, then two modes compared.
+
+<img src="images/lab.gif" alt="The Lab: agent activity for a tool-routed turn, the pre-purchase graph lighting up, and the Compare dialog" width="820"/>
+
+</details>
 
 ## Screens
 
 <details open>
-<summary>Screenshots — guest browsing, the AI shopping flow, and the platform (click to collapse)</summary>
+<summary>Screenshots: the public store, the signed-in shopper, and the staff pages (click to collapse)</summary>
 
-### Guest experience (no login required)
+### Public (no sign-in)
 
-Anyone can browse the catalog, use the AI shopping assistant, and explore product details without creating an account.
+Anyone can browse the catalog and use the shopping assistant without an account.
 
 <table>
-<tr><td><img src="images/flow-guest-storefront.png" alt="Public storefront — browse without signing in" width="820"/></td></tr>
-<tr><td align="center"><em>Product detail — full info, pricing, reviews, and stock status</em></td></tr>
-<tr><td><img src="images/flow-guest-assistant.png" alt="Public AI shopping assistant" width="820"/></td></tr>
-<tr><td align="center"><em>AI shopping assistant — product questions answered via multi-agent routing, no login needed</em></td></tr>
+<tr><td><img src="images/storefront.jpg" alt="Public storefront: hero, scenario cards and categories" width="820"/></td></tr>
+<tr><td align="center"><em>The public store: try a scenario, or browse by category</em></td></tr>
+<tr><td><img src="images/flow-guest-assistant.jpg" alt="Public shopping assistant before the first question" width="820"/></td></tr>
+<tr><td align="center"><em>The shopping assistant, no sign-in needed</em></td></tr>
 </table>
 
-### AI shopping flow (signed in)
+### Signed in: answers as components
 
-Sign in as any seeded user to access cart, checkout, order tracking, and returns — all driven by natural language in the chat interface. Every response renders as generative UI, not raw text: the component (card, table, chart, badge) is chosen by the shape of the data an agent returns.
+Every answer renders as generative UI, not raw text: the component (card, table, chart, badge) is picked by the
+kind of data an agent returns, from one registry (`web/src/lib/chat-schemas.ts`).
 
 <table>
-<tr><td><img src="images/flow-product-search.png" alt="AI chat — product search with cards" width="820"/></td></tr>
-<tr><td align="center"><em>Find a product — orchestrator routes to Product Discovery; results render as interactive cards</em></td></tr>
-<tr><td><img src="images/flow-add-to-cart.png" alt="AI chat — add to cart" width="820"/></td></tr>
-<tr><td align="center"><em>Add to cart — ask the assistant; it calls the cart API and confirms with a card</em></td></tr>
-<tr><td><img src="images/flow-view-cart.png" alt="AI chat — cart summary" width="820"/></td></tr>
-<tr><td align="center"><em>View cart — the agent renders a cart summary with totals and a checkout link</em></td></tr>
-<tr><td><img src="images/flow-order-tracking.png" alt="AI chat — order tracking" width="820"/></td></tr>
-<tr><td align="center"><em>Track an order — Order Management agent returns live status and shipment detail</em></td></tr>
-<tr><td><img src="images/flow-refund.png" alt="AI chat — return / refund request" width="820"/></td></tr>
-<tr><td align="center"><em>Return / refund — agent initiates the return flow and issues a return label</em></td></tr>
-<tr><td><img src="images/flow-review-sentiment.png" alt="AI chat — review sentiment analysis with generative UI charts" width="820"/></td></tr>
-<tr><td align="center"><em>Generative UI — the Review & Sentiment agent's data renders as an interactive card: a rating-distribution bar chart, a 6-month trend line chart, and tone-coded pros/cons, all picked from the shape of the data itself, not a fixed template</em></td></tr>
+<tr><td><img src="images/flow-product-search.jpg" alt="Chat: product search answered with a product card" width="820"/></td></tr>
+<tr><td align="center"><em>Find a product: results as cards with add to cart and details</em></td></tr>
+<tr><td><img src="images/flow-add-to-cart.jpg" alt="Chat: the Sony WH-1000XM5 added to the cart, shown as a cart card with a checkout button" width="820"/></td></tr>
+<tr><td align="center"><em>Add to cart from the chat: the cart comes back as a card with a checkout button</em></td></tr>
+<tr><td><img src="images/flow-order-tracking.jpg" alt="Chat: the latest order as an order card" width="820"/></td></tr>
+<tr><td align="center"><em>Track an order: items, totals, carrier, tracking number and address</em></td></tr>
+<tr><td><img src="images/flow-review-sentiment.jpg" alt="Chat: review sentiment as a card with a rating distribution and a trend" width="820"/></td></tr>
+<tr><td align="center"><em>What buyers say: the rating distribution and how it moved over time</em></td></tr>
+<tr><td><img src="images/flow-view-cart.jpg" alt="Cart page with items and totals" width="820"/></td></tr>
+<tr><td align="center"><em>The cart page</em></td></tr>
+<tr><td><img src="images/marketplace.jpg" alt="Signed-in product catalog with filters and sort" width="820"/></td></tr>
+<tr><td align="center"><em>The catalog: search, categories, sort</em></td></tr>
 </table>
 
-### Platform
+### Staff and sellers
 
 <table>
-<tr><td><img src="images/agent-timeline.png" alt="Live agent activity timeline" width="820"/></td></tr>
-<tr><td align="center"><em>Agent timeline — orchestrator → specialist → tool routing surfaced live in chat</em></td></tr>
-<tr><td><img src="images/storefront.png" alt="Product storefront" width="820"/></td></tr>
-<tr><td align="center"><em>Product storefront — authenticated view with cart and account access</em></td></tr>
-<tr><td><img src="images/marketplace.png" alt="Agent marketplace" width="820"/></td></tr>
-<tr><td align="center"><em>Agent marketplace — browse, request, and manage specialist agent access</em></td></tr>
-<tr><td><img src="images/admin-dashboard.png" alt="Admin dashboard" width="820"/></td></tr>
-<tr><td align="center"><em>Admin dashboard — usage analytics, approval queues, and audit log</em></td></tr>
-<tr><td><img src="images/seller-dashboard.png" alt="Seller dashboard" width="820"/></td></tr>
-<tr><td align="center"><em>Seller dashboard — product catalog and order management</em></td></tr>
+<tr><td><img src="images/admin-dashboard.jpg" alt="Admin overview" width="820"/></td></tr>
+<tr><td align="center"><em>Admin overview</em></td></tr>
+<tr><td><img src="images/seller-dashboard.jpg" alt="Seller dashboard with sales figures and recent orders" width="820"/></td></tr>
+<tr><td align="center"><em>Seller dashboard</em></td></tr>
+<tr><td><img src="images/runs-approval.jpg" alt="Runs page as an admin with a run marked Needs approval" width="820"/></td></tr>
+<tr><td align="center"><em>Runs: every orchestrated request, its steps, and any approval it waits on (staff only)</em></td></tr>
 </table>
 
 </details>

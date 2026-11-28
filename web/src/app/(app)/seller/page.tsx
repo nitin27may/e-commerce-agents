@@ -1,20 +1,16 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api, type SellerOrder, type SellerStats } from "@/lib/api";
 import { asArray, asNumber } from "@/lib/guards";
 import { ErrorState } from "@/components/error-state";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { StatCard } from "@/components/ui/stat-card";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
+import { AccessDenied } from "@/components/ui/access-denied";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -30,14 +26,12 @@ import {
   DollarSign,
   ShoppingCart,
   Star,
-  ArrowRight,
   Loader2,
 } from "lucide-react";
-import { formatPrice, formatDate } from "@/lib/format";
+import { formatPrice, formatDate, shortOrderId } from "@/lib/format";
 import { OrderStatusBadge } from "@/components/status-badge";
 
 export default function SellerDashboardPage() {
-  const router = useRouter();
   const { user, isLoading: authLoading, isAdmin } = useAuth();
 
   const [stats, setStats] = useState<SellerStats | null>(null);
@@ -78,143 +72,74 @@ export default function SellerDashboardPage() {
   if (authLoading) return null;
 
   if (!user || !isSeller) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <Package className="mx-auto size-12 text-muted-foreground" />
-          <h2 className="mt-4 text-lg font-semibold text-foreground">
-            Access Denied
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            The seller dashboard is only available to sellers and admins.
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDenied description="The seller dashboard is only available to sellers and admins." />;
   }
 
   const recentOrders = orders.slice(0, 5);
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-primary">
-              <BarChart3 className="size-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">
-                Seller Dashboard
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Manage your products and track orders
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+    <PageContainer>
+      <PageHeader
+        icon={BarChart3}
+        title="Seller dashboard"
+        description="Your catalogue, revenue and recent orders"
+        actions={
+          <Button variant="outline" render={<Link href="/seller/products" />}>
+            <Package /> Manage products
+          </Button>
+        }
+      />
 
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Loading */}
         {loading && (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         )}
 
-        {/* Error */}
         {error && (
           <ErrorState inline onRetry={loadData} message={error} homeHref="/home" homeLabel="Back to dashboard" />
         )}
 
         {!loading && !error && stats && (
           <>
-            {/* Summary cards */}
-            <div className="mb-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardHeader>
-                  <CardDescription>Total Products</CardDescription>
-                  <CardTitle className="text-3xl">
-                    {stats.product_count}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Link href="/seller/products">
-                    <Button variant="outline" size="sm">
-                      View All <ArrowRight className="ml-1 size-3" />
-                    </Button>
-                  </Link>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardDescription>Total Revenue</CardDescription>
-                  <CardTitle className="flex items-center gap-2 text-3xl">
-                    <DollarSign className="size-6 text-green-600" />
-                    {formatPrice(stats.total_revenue)}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-xs text-muted-foreground">
-                    Across {stats.order_count} orders
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardDescription>Orders Received</CardDescription>
-                  <CardTitle className="flex items-center gap-2 text-3xl">
-                    <ShoppingCart className="size-6 text-blue-600" />
-                    {stats.order_count}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-xs text-muted-foreground">
-                    Orders containing your products
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardDescription>Avg. Product Rating</CardDescription>
-                  <CardTitle className="flex items-center gap-2 text-3xl">
-                    {stats.avg_rating > 0 ? stats.avg_rating.toFixed(1) : "N/A"}
-                    {stats.avg_rating > 0 && (
-                      <Star className="size-6 fill-amber-400 text-amber-400" />
-                    )}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-xs text-muted-foreground">
-                    Across {stats.product_count} products
-                  </p>
-                </CardContent>
-              </Card>
+            <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <StatCard
+                label="Products"
+                value={stats.product_count}
+                icon={Package}
+                hint="Listed in the store"
+              />
+              <StatCard
+                label="Revenue"
+                value={formatPrice(stats.total_revenue)}
+                icon={DollarSign}
+                hint={`Across ${stats.order_count} orders`}
+              />
+              <StatCard
+                label="Orders"
+                value={stats.order_count}
+                icon={ShoppingCart}
+                hint="Orders containing your products"
+              />
+              <StatCard
+                label="Avg. rating"
+                value={stats.avg_rating > 0 ? stats.avg_rating.toFixed(1) : "N/A"}
+                icon={Star}
+                hint={`Across ${stats.product_count} products`}
+              />
             </div>
 
             {/* Recent orders table */}
             <div>
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-foreground">
-                  Recent Orders
-                </h2>
-                <Link href="/seller/products">
-                  <Button variant="outline" size="sm">
-                    Manage Products
-                  </Button>
-                </Link>
-              </div>
+              <h2 className="mb-3 text-lg font-semibold text-foreground">
+                Recent orders
+              </h2>
               <Card>
                 <CardContent className="p-0">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Order ID</TableHead>
+                        <TableHead>Order</TableHead>
                         <TableHead>Buyer</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Date</TableHead>
@@ -226,7 +151,7 @@ export default function SellerDashboardPage() {
                       {recentOrders.map((order) => (
                         <TableRow key={order.id}>
                           <TableCell className="font-mono text-xs text-muted-foreground">
-                            #{order.id?.slice(0, 8)}
+                            #{shortOrderId(order.id)}
                           </TableCell>
                           <TableCell>
                             <div>
@@ -270,7 +195,6 @@ export default function SellerDashboardPage() {
             </div>
           </>
         )}
-      </div>
-    </div>
+    </PageContainer>
   );
 }

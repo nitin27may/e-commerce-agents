@@ -58,7 +58,7 @@ instantly, which makes latency meaningless.
 
 ![Compare dialog: pre-purchase research and return-and-replace run on one prompt, each card showing its answer, latency, steps and graph](images/compare-dialog.jpg)
 
-*The Compare dialog behind these numbers, here on the no-key stack where only the two workflow modes can
+*The Compare dialog behind these numbers, in the staff Lab (`/lab`), here on the no-key stack where only the two workflow modes can
 answer (no model, so no tokens or cost). The measured table above comes from a keyed run.*
 
 ## Read the last two rows carefully

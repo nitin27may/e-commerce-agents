@@ -1,0 +1,991 @@
+"use client";
+
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
+import { useSearchParams } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
+import { asArray } from "@/lib/guards";
+import { useCart } from "@/lib/cart-context";
+import { api, type AgentStep, type GroundingReport } from "@/lib/api";
+import { RichMessage } from "@/components/chat/rich-message";
+import { AgentTimeline } from "@/components/chat/agent-timeline";
+import { GroundingBadge } from "@/components/chat/grounding-badge";
+import { OrchestrationGraph } from "@/components/chat/orchestration-graph";
+import { ModeSwitcher } from "@/components/chat/mode-switcher";
+import { ModeComparison } from "@/components/chat/mode-comparison";
+import { Badge } from "@/components/ui/badge";
+import { DemoResetButton, DemoTourChips, ReplayMissCallout } from "@/components/chat/demo-tour-chips";
+import { useDemoTour, type DemoTourChip } from "@/lib/demo-tour";
+import { QUICK_PROMPTS } from "@/lib/scenarios";
+import { Button } from "@/components/ui/button";
+import { PromptInputBox } from "@/components/ui/ai-prompt-box";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Sheet,
+  SheetTrigger,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  MessageSquarePlusIcon,
+  Trash2Icon,
+  PanelLeftIcon,
+  BotIcon,
+  UserIcon,
+  ShoppingCart,
+  Copy,
+  Check,
+  RotateCcw,
+  Share2,
+} from "lucide-react";
+import { ApprovalCard } from "@/components/chat/approval-card";
+import { DEMO_SCENARIOS } from "@/lib/scenarios";
+import { deriveSuggestions } from "@/lib/suggestions";
+import { AGENT_MODES } from "@/components/ui/ai-prompt-box";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  agents_involved?: string[];
+  steps?: AgentStep[];
+  created_at?: string;
+  streaming?: boolean;
+  /** Orchestration mode this turn ran through, at send time (the Lab draws its graph). */
+  mode?: string;
+  /** The `usage_logs` id this turn was recorded under — from the `event: run` SSE
+   * frame, which arrives after persistence because the id does not exist before
+   * then. Needed to resume a run that paused on a human. */
+  runId?: string;
+  /** Set when the run stopped at an in-workflow HITL gate and is waiting on a
+   * decision. Drives the inline approval card. */
+  pendingApproval?: boolean;
+  /** Lab only: executor ids mid-run / completed / errored, from `event: node`/`error` SSE frames. */
+  activeNodeIds?: string[];
+  doneNodeIds?: string[];
+  errorNodeIds?: string[];
+  /** Lab only: the server-side fact-check report from `event: grounding`. */
+  grounding?: GroundingReport;
+  /** Set when the demo had no recorded response for this turn (`event: replay_miss`);
+   * rendered as a callout that re-offers the tour chips instead of answer text. */
+  replayMiss?: { message: string };
+}
+
+interface Conversation {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Orchestration mode persistence — remembered per conversation (and for a
+// not-yet-created conversation, under a "draft" key) so a reload keeps the
+// same mode selected. Distinct from AGENT_MODES/agentMode in
+// ai-prompt-box.tsx, which pick a specialist to route to directly — this
+// picks how the orchestrator itself runs the turn.
+// ---------------------------------------------------------------------------
+
+const ORCH_MODE_STORAGE_PREFIX = "ecommerce_orch_mode:";
+
+// What the shopper reads while a turn runs: what is being done for them, never which agent or tool does it.
+const WORKING_LABEL = "Working on it...";
+const TOPIC_LABELS: Record<string, string> = {
+  "product-discovery": "Searching the catalog...",
+  "order-management": "Looking up your order...",
+  "pricing-promotions": "Checking prices and offers...",
+  "review-sentiment": "Reading the reviews...",
+  "inventory-fulfillment": "Checking stock and delivery...",
+};
+const ORCH_MODE_DRAFT_KEY = "draft";
+
+function loadStoredOrchestrationMode(conversationId: string | null): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem(ORCH_MODE_STORAGE_PREFIX + (conversationId ?? ORCH_MODE_DRAFT_KEY)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+// Storage changes only through this tab's own writes, which also set component state.
+function subscribeNever(): () => void {
+  return () => {};
+}
+
+function storeOrchestrationMode(conversationId: string | null, mode: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(ORCH_MODE_STORAGE_PREFIX + (conversationId ?? ORCH_MODE_DRAFT_KEY), mode);
+  } catch {
+    // Private browsing / storage full — the mode still works for this
+    // session via component state, it just won't survive a reload.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Thinking indicator (replaces generic typing dots)
+// ---------------------------------------------------------------------------
+
+function ThinkingIndicator({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 px-1 py-3">
+      <Avatar className="size-7 shrink-0">
+        <AvatarFallback className="bg-muted text-muted-foreground text-xs">
+          <BotIcon className="size-3.5" />
+        </AvatarFallback>
+      </Avatar>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <motion.span
+              key={i}
+              className="size-1.5 rounded-full bg-muted-foreground/60"
+              animate={{ opacity: [0.3, 1, 0.3] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut", delay: i * 0.15 }}
+            />
+          ))}
+        </span>
+        <span>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Message action bar (copy, retry, share)
+// ---------------------------------------------------------------------------
+
+function MessageActions({
+  text,
+  onRetry,
+}: {
+  text: string;
+  onRetry: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [shared, setShared] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  const handleShare = async () => {
+    try {
+      const url = `${window.location.origin}/chat?prompt=${encodeURIComponent(text.slice(0, 200))}`;
+      await navigator.clipboard.writeText(url);
+      setShared(true);
+      setTimeout(() => setShared(false), 1500);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  return (
+    // Quiet until the message is hovered or focused: the answer is the point, not its toolbar.
+    <div className="mt-1 flex items-center gap-3 opacity-60 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+        {copied ? "Copied" : "Copy"}
+      </button>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <RotateCcw className="size-3" />
+        Retry
+      </button>
+      <button
+        type="button"
+        onClick={handleShare}
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {shared ? <Check className="size-3" /> : <Share2 className="size-3" />}
+        {shared ? "Copied link" : "Share"}
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Conversation list (shared between desktop panel and mobile sheet)
+// ---------------------------------------------------------------------------
+
+function ConversationList({
+  conversations,
+  activeId,
+  onSelect,
+  onDelete,
+  onNew,
+}: {
+  conversations: Conversation[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
+  onNew: () => void;
+}) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between px-3 py-2.5">
+        <span className="text-sm font-semibold text-foreground">
+          Conversations
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onNew}
+          title="New chat"
+        >
+          <MessageSquarePlusIcon className="size-4" />
+        </Button>
+      </div>
+      <Separator />
+      <ScrollArea className="flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-0.5 p-1.5">
+          {conversations.length === 0 && (
+            <p className="px-2 py-8 text-center text-xs text-muted-foreground">
+              No conversations yet. Send a message to start one.
+            </p>
+          )}
+          {conversations.map((conv) => (
+            <div
+              key={conv.id}
+              className={`group flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm cursor-pointer transition-colors ${
+                conv.id === activeId
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              }`}
+              onClick={() => onSelect(conv.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onSelect(conv.id);
+              }}
+              role="button"
+              tabIndex={0}
+            >
+              <span className="flex-1 truncate">{conv.title}</span>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-muted-foreground hover:text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(conv.id);
+                }}
+                title="Delete conversation"
+              >
+                <Trash2Icon className="size-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Message content renderer
+// ---------------------------------------------------------------------------
+
+function MessageContent({ content }: { content: string }) {
+  const paragraphs = content.split("\n\n");
+  if (paragraphs.length <= 1) {
+    return <span className="whitespace-pre-wrap">{content}</span>;
+  }
+  return (
+    <>
+      {paragraphs.map((p, i) => (
+        <p
+          key={i}
+          className={i > 0 ? "mt-2 whitespace-pre-wrap" : "whitespace-pre-wrap"}
+        >
+          {p}
+        </p>
+      ))}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Chat Page
+// ---------------------------------------------------------------------------
+
+/**
+ * The chat. `devView` is off for the storefront (/chat): a shopper, a seller and staff all get answers, cards and a
+ * plain status line, never the machinery. The staff-only Lab (/lab) turns it on: the orchestration mode switcher,
+ * the Compare dialog, which agents answered, each step and tool call, the server's grounding report and the live
+ * workflow graph. Same component, same stream, so the Lab shows exactly what the storefront ran.
+ */
+export function ChatView({ devView = false }: { devView?: boolean }) {
+  const { isAuthenticated } = useAuth();
+  const { itemCount } = useCart();
+  // Loaded here as well as in the chip components so a replay-miss notice has its chips on first paint.
+  const tour = useDemoTour();
+
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<
+    string | null
+  >(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isResponding, setIsResponding] = useState(false);
+  const [thinkingLabel, setThinkingLabel] = useState<string>(WORKING_LABEL);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  // The mode remembered for the active conversation comes from localStorage, which the server
+  // cannot read: useSyncExternalStore renders "" on the server and during hydration, then the
+  // stored value. A pick made in this session (or a demo chip's mode) overrides it for the
+  // conversation it was made in only, so a new conversation falls back to what was stored for it.
+  const storedOrchestrationMode = useSyncExternalStore(
+    subscribeNever,
+    () => loadStoredOrchestrationMode(activeConversationId),
+    () => "",
+  );
+  const [modeOverride, setModeOverride] = useState<{ conversationId: string | null; mode: string } | null>(null);
+  const orchestrationMode =
+    modeOverride && modeOverride.conversationId === activeConversationId
+      ? modeOverride.mode
+      : storedOrchestrationMode;
+
+  const searchParams = useSearchParams();
+  const pendingQueryRef = useRef<string | null>(null);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Follow-up chips, derived from the assistant's last completed message.
+   *
+   * Was `DEMO_SCENARIOS.slice(0, 4)` — the same four canned prompts after every
+   * turn, including when the assistant had just asked a direct question the
+   * chips ignored (issue #4).
+   *
+   * Skips a message that is still streaming: deriving from a half-arrived
+   * answer makes the chips flicker and, worse, briefly show suggestions for a
+   * card that has not finished rendering.
+   *
+   * `deriveSuggestions` is a pure function over text the client already has —
+   * no request, no latency, and testable in isolation (`lib/suggestions.test.ts`).
+   */
+  const suggestions = useMemo(() => {
+    const lastAssistant = [...messages]
+      .reverse()
+      .find((m) => m.role === "assistant" && !m.streaming);
+
+    return deriveSuggestions(
+      lastAssistant?.content,
+      DEMO_SCENARIOS.slice(0, 4).map((s) => ({ label: s.chipLabel, prompt: s.prompt }))
+    );
+  }, [messages]);
+  // Per-message abort controller. New send aborts any in-flight stream;
+  // unmount aborts whatever's still running. Plugs the SSE-leak finding.
+  const streamAbortRef = useRef<AbortController | null>(null);
+  // Set by sendMessage() right after it creates a new conversation, so the
+  // "load messages when active conversation changes" effect below can skip
+  // its usual server reload for that one transition — see that effect's
+  // comment.
+  const justCreatedConversationRef = useRef<string | null>(null);
+  // A tour chip that starts a new conversation clears the active id and shows its
+  // own first message in the same batch; the "no conversation -> empty thread"
+  // effect below must not wipe that message once.
+  const keepMessagesOnClearRef = useRef(false);
+  // The conversation the user most recently asked to show (null = a new chat). A slow
+  // getConversation() for an earlier selection must not overwrite a newer choice.
+  const wantedConversationRef = useRef<string | null>(null);
+
+  // Cancel in-flight stream when the component unmounts (route change).
+  useEffect(
+    () => () => {
+      streamAbortRef.current?.abort();
+    },
+    []
+  );
+
+  // ---- Load conversations on mount ----
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    loadConversations();
+  }, [isAuthenticated]);
+
+  // ---- Auto-send ?q= query param on mount ----
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    // `prompt` is the deep-link param from home quick-prompts / product pages;
+    // `q` is kept for back-compat.
+    const q = searchParams.get("prompt") ?? searchParams.get("q");
+    if (q) {
+      pendingQueryRef.current = q;
+    }
+  }, [isAuthenticated, searchParams]);
+
+  // Fire the pending query once conversations have loaded (initial mount)
+  useEffect(() => {
+    if (pendingQueryRef.current && !isResponding) {
+      const q = pendingQueryRef.current;
+      pendingQueryRef.current = null;
+      sendMessage(q);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversations]);
+
+  async function loadConversations() {
+    try {
+      const data = await api.getConversations();
+      setConversations(asArray<Conversation>(data));
+    } catch {
+      // Silently handle -- empty list is fine on first load
+    }
+  }
+
+  // ---- Load messages when active conversation changes ----
+  useEffect(() => {
+    wantedConversationRef.current = activeConversationId;
+    if (!activeConversationId) {
+      if (keepMessagesOnClearRef.current) {
+        keepMessagesOnClearRef.current = false;
+        return;
+      }
+      setMessages([]);
+      return;
+    }
+    if (justCreatedConversationRef.current === activeConversationId) {
+      // sendMessage() just set this id after creating the conversation for
+      // its own first turn — local `messages` state is already complete
+      // (and richer: it carries client-only fields such as an assistant
+      // message's `runId` and `pendingApproval`, which drive the approval card
+      // and which the server has nowhere to persist). Reloading from the server
+      // here would silently replace those messages and wipe those fields.
+      justCreatedConversationRef.current = null;
+      return;
+    }
+    loadMessages(activeConversationId);
+  }, [activeConversationId]);
+
+  const handleModeChange = useCallback(
+    (mode: string) => {
+      setModeOverride({ conversationId: activeConversationId, mode });
+      storeOrchestrationMode(activeConversationId, mode);
+    },
+    [activeConversationId],
+  );
+
+  async function loadMessages(conversationId: string) {
+    try {
+      const data = await api.getConversation(conversationId);
+      if (wantedConversationRef.current !== conversationId) return;
+      setMessages(asArray<Message>(data?.messages));
+    } catch {
+      if (wantedConversationRef.current !== conversationId) return;
+      setMessages([]);
+    }
+  }
+
+  // ---- Auto-scroll to bottom ----
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isResponding]);
+
+  // ---- Start new conversation ----
+  const handleNewChat = useCallback(() => {
+    setActiveConversationId(null);
+    setMessages([]);
+    setSheetOpen(false);
+  }, []);
+
+  // ---- Select conversation ----
+  const handleSelectConversation = useCallback((id: string) => {
+    setActiveConversationId(id);
+    setSheetOpen(false);
+  }, []);
+
+  // ---- Delete conversation ----
+  const handleDeleteConversation = useCallback(
+    async (id: string) => {
+      try {
+        await api.deleteConversation(id);
+        setConversations((prev) => prev.filter((c) => c.id !== id));
+        if (activeConversationId === id) {
+          setActiveConversationId(null);
+          setMessages([]);
+        }
+      } catch {
+        // Swallow -- UI stays consistent regardless
+      }
+    },
+    [activeConversationId],
+  );
+
+  // ---- Core send logic (shared by form submit and ?q= auto-send) ----
+  async function sendMessage(
+    text: string,
+    agentMode?: string | null,
+    /** A demo-tour chip's own mode and conversation choice, instead of the composer's. */
+    chip?: { mode: string; newConversation: boolean },
+  ) {
+    if (!text.trim() || isResponding) return;
+
+    const trimmed = text.trim();
+    const runMode = chip ? chip.mode : orchestrationMode;
+    const startsNew = chip?.newConversation === true;
+    const conversationId = startsNew ? null : activeConversationId;
+    if (chip) setModeOverride({ conversationId: activeConversationId, mode: chip.mode });
+
+    // Set initial thinking label from the selected mode
+    const modeEntry = AGENT_MODES.find((m) => m.id === agentMode);
+    setThinkingLabel(modeEntry && modeEntry.id ? (TOPIC_LABELS[modeEntry.id] ?? WORKING_LABEL) : WORKING_LABEL);
+
+    // Optimistic user message
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: trimmed,
+    };
+    if (startsNew) {
+      if (activeConversationId) {
+        keepMessagesOnClearRef.current = true;
+        setActiveConversationId(null);
+      }
+      setMessages([userMessage]);
+    } else {
+      setMessages((prev) => [...prev, userMessage]);
+    }
+    setIsResponding(true);
+
+    const assistantId = crypto.randomUUID();
+    // Set once the orchestrator's own final text (onChunk) starts arriving
+    // for this turn. Before that, any content shown is a specialist's live
+    // `delta` preview (onDeltaChunk) — the first real-text chunk *replaces*
+    // it rather than appending, since the backend no longer persists the
+    // preview into the saved message either (Phase 8.1): the specialist's
+    // preview and the orchestrator's own final answer restate the same
+    // content in independently-generated wording, so showing both was a
+    // visible duplication, not two genuinely different things.
+    let receivedFinalText = false;
+    // Snapshot now — orchestrationMode may change before this turn resolves
+    // (e.g. the user picks a different mode for their next message while
+    // this one is still streaming), but this message ran through whatever
+    // was selected at send time.
+    const messageMode = runMode || "tool";
+
+    // Abort any prior stream still draining before starting a new one.
+    streamAbortRef.current?.abort();
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+
+    try {
+      // Create the assistant message on the first frame of any kind, update it after that. The existence check
+      // runs inside the state updater: a flag set by one handler's updater is not yet visible to the next
+      // handler's synchronous check, which is how two copies of the same answer used to appear.
+      const upsertAssistant = (update: (m: Message) => Message) =>
+        setMessages((prev) =>
+          prev.some((m) => m.id === assistantId)
+            ? prev.map((m) => (m.id === assistantId ? update(m) : m))
+            : [
+                ...prev,
+                update({ id: assistantId, role: "assistant", content: "", streaming: true, mode: messageMode }),
+              ],
+        );
+
+      const meta = await api.chatStream(
+        trimmed,
+        conversationId ?? undefined,
+        (chunk) => {
+          const isFirstFinalChunk = !receivedFinalText;
+          receivedFinalText = true;
+          upsertAssistant((m) => ({ ...m, content: isFirstFinalChunk ? chunk : m.content + chunk }));
+        },
+        controller.signal,
+        {
+          onDeltaChunk: (chunk) => {
+            // A specialist's live preview; the orchestrator's final text replaces it (see receivedFinalText).
+            if (receivedFinalText) return;
+            upsertAssistant((m) => ({ ...m, content: m.content + chunk }));
+          },
+          onStep: (step) => {
+            setThinkingLabel(TOPIC_LABELS[step.agent ?? ""] ?? WORKING_LABEL);
+            if (devView) upsertAssistant((m) => ({ ...m, steps: [...(m.steps ?? []), step] }));
+          },
+          onOrchestrationEvent: (eventName, data) => {
+            if (eventName === "run") {
+              const { run_id, pending_approval } = data as { run_id?: string; pending_approval?: boolean };
+              if (!run_id) return;
+              upsertAssistant((m) => ({ ...m, runId: run_id, pendingApproval: pending_approval === true }));
+              return;
+            }
+            if (!devView || (eventName !== "node" && eventName !== "error")) return;
+            const { node_id: nodeId, phase } = data as { node_id?: string; phase?: "enter" | "exit" };
+            if (!nodeId) return;
+            upsertAssistant((m) => {
+              if (eventName === "error") return { ...m, errorNodeIds: [...(m.errorNodeIds ?? []), nodeId] };
+              if (phase === "exit") {
+                return {
+                  ...m,
+                  activeNodeIds: (m.activeNodeIds ?? []).filter((id) => id !== nodeId),
+                  doneNodeIds: [...(m.doneNodeIds ?? []), nodeId],
+                };
+              }
+              return { ...m, activeNodeIds: [...(m.activeNodeIds ?? []), nodeId] };
+            });
+          },
+          onGrounding: (report) => {
+            if (devView) upsertAssistant((m) => ({ ...m, grounding: report }));
+          },
+          onReplayMiss: (miss) => {
+            // No recording for this prompt: a callout in place of an answer.
+            upsertAssistant((m) => ({ ...m, replayMiss: miss, streaming: false }));
+          },
+          mode: runMode || undefined,
+        },
+      );
+
+      // If this was the first message, a new conversation was created —
+      // re-key the draft-stored mode under the real conversation id so a
+      // reload still picks it up.
+      if (!conversationId && meta.conversation_id) {
+        storeOrchestrationMode(meta.conversation_id, runMode);
+        justCreatedConversationRef.current = meta.conversation_id;
+        setActiveConversationId(meta.conversation_id);
+        await loadConversations();
+      }
+
+      // Finalize: drop streaming flag, attach agents_involved
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? { ...m, streaming: false, agents_involved: meta.agents_involved }
+            : m,
+        ),
+      );
+    } catch (err) {
+      const errMsg =
+        err instanceof Error ? err.message : "Something went wrong.";
+      setMessages((prev) => {
+        const existing = prev.find((m) => m.id === assistantId);
+        if (existing) {
+          return prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, content: `Error: ${errMsg}`, streaming: false }
+              : m,
+          );
+        }
+        return [
+          ...prev,
+          { id: assistantId, role: "assistant", content: `Error: ${errMsg}` },
+        ];
+      });
+    } finally {
+      setIsResponding(false);
+    }
+  }
+
+  // ---- Demo tour ----
+  function handlePickChip(chip: DemoTourChip) {
+    sendMessage(chip.prompt, null, { mode: chip.mode, newConversation: chip.new_conversation });
+  }
+
+  // The server just deleted the tour user's conversations; drop them from the UI too.
+  function handleDemoReset() {
+    setConversations([]);
+    handleNewChat();
+  }
+
+  // ---- Render ----
+  return (
+    <div className="flex h-full">
+      {/* -------- Conversation list panel (desktop) -------- */}
+      <aside className="hidden w-60 shrink-0 flex-col border-r bg-muted/30 lg:flex">
+        <ConversationList
+          conversations={conversations}
+          activeId={activeConversationId}
+          onSelect={handleSelectConversation}
+          onDelete={handleDeleteConversation}
+          onNew={handleNewChat}
+        />
+      </aside>
+
+      {/* -------- Main chat area -------- */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <h1 className="sr-only">Chat</h1>
+        {/* ---- Top bar ---- */}
+        <div className="flex h-11 items-center gap-2 border-b px-3">
+          {/* Mobile conversation list toggle */}
+          <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+            <SheetTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="lg:hidden"
+                  aria-label="Open conversations"
+                />
+              }
+            >
+              <PanelLeftIcon className="size-4" />
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72 p-0">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Conversations</SheetTitle>
+              </SheetHeader>
+              <ConversationList
+                conversations={conversations}
+                activeId={activeConversationId}
+                onSelect={handleSelectConversation}
+                onDelete={handleDeleteConversation}
+                onNew={handleNewChat}
+              />
+            </SheetContent>
+          </Sheet>
+
+          <h2 className="flex-1 truncate text-sm font-medium">
+            {activeConversationId
+              ? conversations.find((c) => c.id === activeConversationId)
+                  ?.title ?? "Chat"
+              : "New chat"}
+          </h2>
+
+          <Link
+            href="/cart"
+            className="relative flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <ShoppingCart className="size-4" />
+            {itemCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                {itemCount > 99 ? "99+" : itemCount}
+              </span>
+            )}
+          </Link>
+
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="lg:hidden"
+            onClick={handleNewChat}
+            title="New chat"
+            aria-label="New chat"
+          >
+            <MessageSquarePlusIcon className="size-4" />
+          </Button>
+        </div>
+
+        {/* ---- Messages ---- */}
+        {/* aria-busy holds the announcement until a streamed reply finishes, so a screen reader does not read every token. */}
+        <div
+          role="log"
+          aria-live="polite"
+          aria-label="Conversation"
+          aria-busy={isResponding}
+          className="flex-1 overflow-y-auto"
+        >
+          {messages.length === 0 && !isResponding ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
+              <div className="flex size-14 items-center justify-center rounded-full bg-primary/10">
+                <BotIcon className="size-7 text-primary" />
+              </div>
+              <h3 className="text-base font-semibold">
+                How can I help you today?
+              </h3>
+              <p className="max-w-sm text-sm text-muted-foreground">
+                Ask about products, orders, pricing, reviews, stock, or
+                anything else, in your own words.
+              </p>
+              {/* A demo serves recorded answers only for its tour prompts, so offering others would only lead to misses. */}
+              {!tour && (
+                <div className="mt-2 flex flex-wrap justify-center gap-2">
+                  {QUICK_PROMPTS.map((s) => (
+                    <button
+                      key={s.label}
+                      type="button"
+                      onClick={() => sendMessage(s.prompt)}
+                      className="rounded-full border bg-card px-3 py-1.5 text-sm text-foreground/80 transition-colors hover:border-primary/40 hover:bg-accent hover:text-foreground"
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <DemoTourChips onPick={handlePickChip} disabled={isResponding} />
+            </div>
+          ) : (
+            <div className="mx-auto max-w-3xl px-4 py-4">
+              {messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  data-message-role={msg.role}
+                  className={`group/message mb-5 flex items-start gap-2.5 ${
+                    msg.role === "user" ? "flex-row-reverse" : "flex-row"
+                  }`}
+                >
+                  <Avatar className="mt-0.5 size-7 shrink-0">
+                    <AvatarFallback
+                      className={
+                        msg.role === "user"
+                          ? "bg-primary text-primary-foreground text-xs"
+                          : "bg-muted text-muted-foreground text-xs"
+                      }
+                    >
+                      {msg.role === "user" ? (
+                        <UserIcon className="size-3.5" />
+                      ) : (
+                        <BotIcon className="size-3.5" />
+                      )}
+                    </AvatarFallback>
+                  </Avatar>
+
+                  {/* The user's turn is a bubble; the assistant's sits on the page, so its cards are not a box in a box. */}
+                  <div
+                    role={
+                      msg.role === "assistant" && msg.content.startsWith("Error: ")
+                        ? "alert"
+                        : undefined
+                    }
+                    className={
+                      msg.role === "user"
+                        ? "max-w-[80%] rounded-2xl bg-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground"
+                        : "min-w-0 flex-1 pt-1 text-sm leading-relaxed text-foreground"
+                    }
+                  >
+                    {msg.role === "assistant" && msg.replayMiss ? (
+                      <ReplayMissCallout
+                        message={msg.replayMiss.message}
+                        onPick={handlePickChip}
+                        disabled={isResponding}
+                      />
+                    ) : msg.role === "assistant" ? (
+                      <RichMessage
+                        content={msg.content}
+                        streaming={msg.streaming}
+                        onAction={(text) => sendMessage(text)}
+                      />
+                    ) : (
+                      <MessageContent content={msg.content} />
+                    )}
+
+                    {/* The storefront shows no agent names, tool steps, graphs or grounding reports, for any role:
+                        a shopper gets the answer, not the machinery. The staff Lab shows all of it. */}
+                    {devView && msg.role === "assistant" && (
+                      <div className="mt-3 space-y-2 border-t border-dashed pt-2">
+                        {msg.agents_involved && msg.agents_involved.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {msg.agents_involved.map((agent) => (
+                              <Badge key={agent} variant="outline" className="text-xs font-normal">
+                                {agent}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                        {msg.steps && msg.steps.length > 0 && <AgentTimeline steps={msg.steps} />}
+                        <GroundingBadge report={msg.grounding} />
+                        {msg.mode && !msg.replayMiss && (
+                          <OrchestrationGraph
+                            mode={msg.mode}
+                            activeNodeIds={msg.activeNodeIds}
+                            doneNodeIds={msg.doneNodeIds}
+                            errorNodeIds={msg.errorNodeIds}
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {msg.role === "assistant" && msg.pendingApproval && msg.runId && (
+                      <ApprovalCard
+                        runId={msg.runId}
+                        onResolved={(outcome) => {
+                          // Clear the gate on this message and append the
+                          // resumed turn as its own assistant message, so the
+                          // thread reads as the conversation it actually was:
+                          // paused, decided, continued.
+                          setMessages((prev) => [
+                            ...prev.map((m) =>
+                              m.id === msg.id ? { ...m, pendingApproval: false } : m,
+                            ),
+                            {
+                              id: `${msg.id}-resumed`,
+                              role: "assistant" as const,
+                              content: outcome.text,
+                              agents_involved: outcome.agentsInvolved,
+                            },
+                          ]);
+                        }}
+                      />
+                    )}
+
+                    {msg.role === "assistant" && !msg.streaming && msg.content && (
+                      <MessageActions
+                        text={msg.content}
+                        onRetry={() => {
+                          // Find the user message immediately preceding this assistant message
+                          const msgIndex = messages.findIndex((m) => m.id === msg.id);
+                          const userMsg = messages
+                            .slice(0, msgIndex)
+                            .findLast((m) => m.role === "user");
+                          if (userMsg) sendMessage(userMsg.content);
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              <AnimatePresence>
+                {isResponding && messages[messages.length - 1]?.role !== "assistant" && (
+                  <motion.div
+                    key="thinking"
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <ThinkingIndicator label={thinkingLabel} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {/* ---- Input area ---- */}
+        <div className="border-t bg-background px-4 py-3">
+          <div className="mx-auto max-w-3xl space-y-2">
+            <div className="flex items-center justify-end gap-2">
+              <DemoResetButton onReset={handleDemoReset} disabled={isResponding} />
+              {devView && (
+                <>
+                  <ModeComparison />
+                  <ModeSwitcher value={orchestrationMode} onChange={handleModeChange} disabled={isResponding} />
+                </>
+              )}
+            </div>
+            <PromptInputBox
+              onSend={(message, agentMode) => sendMessage(message, agentMode)}
+              isLoading={isResponding}
+              showSpecialistPicker={devView}
+              // The empty state already lists the quick prompts above; the same chips in the composer doubled them.
+              suggestions={messages.length > 0 ? suggestions : []}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

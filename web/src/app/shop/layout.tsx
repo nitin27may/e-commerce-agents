@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Store, Search, Sparkles } from "lucide-react";
+import { Store, Search, Bot } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { CartProvider } from "@/lib/cart-context";
 import { Button } from "@/components/ui/button";
@@ -81,8 +81,8 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
       <footer className="border-t">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-6 text-sm text-muted-foreground sm:flex-row sm:px-6">
           <p className="flex items-center gap-1.5">
-            <Sparkles className="size-3.5 text-primary" />
-            Agentic shopping demo · powered by 6 specialist agents
+            <Bot className="size-3.5 text-primary" aria-hidden />
+            Demo store with an AI shopping assistant
           </p>
           <div className="flex items-center gap-4">
             <Link href="/" className="hover:text-foreground">About this project</Link>

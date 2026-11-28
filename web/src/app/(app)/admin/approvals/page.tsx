@@ -6,10 +6,16 @@ import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api, type ApprovalDetail, type ApprovalSummary } from "@/lib/api";
 import { toast } from "@/lib/toast";
+import { formatDateTime, formatPrice } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
-import { TONE_BADGE_CLASS } from "@/components/ui/status-badge";
+import { StatusBadge, TONE_BADGE_CLASS, TONE_TEXT_CLASS } from "@/components/ui/status-badge";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
+import { AccessDenied } from "@/components/ui/access-denied";
+import { EmptyState } from "@/components/empty-state";
+import { ApprovalDetailView } from "@/components/admin/approval-detail";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { CheckCircle, XCircle, Clock, ShieldAlert, Loader2, RefreshCw, User, Route } from "lucide-react";
+import { CheckCircle, XCircle, Clock, Loader2, RefreshCw, User, Route } from "lucide-react";
 
 // The staff inbox. It reads the unified approvals API (GET /api/approvals), so it lists every
 // approval the signed-in reviewer may decide, whatever raised it: a gated tool call, a paused
@@ -55,23 +61,10 @@ function kindLabel(kind: string): string {
   return KIND_LABELS[kind] ?? kind.replaceAll("_", " ");
 }
 
-function formatTs(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
-
 function formatAmount(amount: ApprovalSummary["amount"]): string | null {
   if (amount === null || amount === undefined || amount === "") return null;
   const n = Number(amount);
-  return Number.isFinite(n) ? `$${n.toFixed(2)}` : String(amount);
+  return Number.isFinite(n) ? formatPrice(n) : String(amount);
 }
 
 // ---------------------------------------------------------------------------
@@ -144,74 +137,50 @@ export default function ApprovalsPage() {
   if (authLoading) return null;
 
   if (!isStaff) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-destructive/10">
-            <ShieldAlert className="size-8 text-destructive" />
-          </div>
-          <h2 className="mt-4 text-lg font-semibold">Access Denied</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Staff access required (support or admin).</p>
-        </div>
-      </div>
-    );
+    return <AccessDenied description="Staff access required (support or admin)." />;
   }
 
   const pendingCount = approvals.filter((a) => OPEN_STATUSES.has(a.status)).length;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b bg-card">
-        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-primary">
-                <CheckCircle className="size-5 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">
-                  Approval Queue
-                  {pendingCount > 0 && (
-                    <span className="ml-2 rounded-full bg-warning/15 px-2 py-0.5 text-sm font-medium text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning">
-                      {pendingCount} pending
-                    </span>
+    <PageContainer>
+      <PageHeader
+        icon={CheckCircle}
+        title={
+          <span className="flex flex-wrap items-center gap-2">
+            Approvals
+            {pendingCount > 0 && <StatusBadge label={`${pendingCount} pending`} tone="warning" />}
+          </span>
+        }
+        description="Returns, refunds and other actions waiting for a person to decide"
+        actions={
+          <>
+            <div className="flex rounded-lg border bg-card p-0.5" role="group" aria-label="Filter approvals">
+              {(["pending", "all"] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  aria-pressed={filter === f}
+                  onClick={() => setFilter(f)}
+                  className={cn(
+                    "rounded-md px-3 py-1 text-xs font-medium transition-colors",
+                    filter === f
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  Returns, refunds and other agent actions waiting for a person to decide
-                </p>
-              </div>
+                >
+                  {f === "pending" ? "Pending" : "All"}
+                </button>
+              ))}
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex rounded-lg border bg-card">
-                {(["pending", "all"] as const).map((f) => (
-                  <button
-                    key={f}
-                    type="button"
-                    aria-pressed={filter === f}
-                    onClick={() => setFilter(f)}
-                    className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors first:rounded-l-lg last:rounded-r-lg ${
-                      filter === f
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
-              <Button variant="outline" size="sm" onClick={load} className="gap-1.5">
-                <RefreshCw className="size-3.5" />
-                Refresh
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+            <Button variant="outline" size="sm" onClick={load}>
+              <RefreshCw data-icon="inline-start" />
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
-      {/* Content */}
-      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
         {loading && (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="size-5 animate-spin text-primary" />
@@ -226,15 +195,11 @@ export default function ApprovalsPage() {
         )}
 
         {!loading && !loadError && approvals.length === 0 && (
-          <div className="py-20 text-center">
-            <CheckCircle className="mx-auto size-12 text-success" />
-            <p className="mt-3 text-sm font-medium text-foreground">
-              {filter === "pending" ? "No pending approvals" : "No approvals yet"}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Returns, refunds and cancellations that policy routes to you will appear here.
-            </p>
-          </div>
+          <EmptyState
+            icon={CheckCircle}
+            title={filter === "pending" ? "No pending approvals" : "No approvals yet"}
+            description="Returns, refunds and cancellations that policy routes to you will appear here."
+          />
         )}
 
         {!loading && !loadError && approvals.length > 0 && (
@@ -254,11 +219,11 @@ export default function ApprovalsPage() {
                   <div className="flex items-start gap-4 p-4">
                     <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                       {OPEN_STATUSES.has(approval.status) ? (
-                        <Clock className="size-4 text-warning" />
+                        <Clock className={cn("size-4", TONE_TEXT_CLASS.warning)} />
                       ) : statusCfg.className === TONE_BADGE_CLASS.destructive ? (
                         <XCircle className="size-4 text-destructive" />
                       ) : (
-                        <CheckCircle className="size-4 text-success" />
+                        <CheckCircle className={cn("size-4", TONE_TEXT_CLASS.success)} />
                       )}
                     </div>
 
@@ -285,9 +250,9 @@ export default function ApprovalsPage() {
                             Routed to {approval.route}
                           </span>
                         )}
-                        <span>{formatTs(approval.created_at)}</span>
+                        <span>{formatDateTime(approval.created_at)}</span>
                         {approval.due_at && OPEN_STATUSES.has(approval.status) && (
-                          <span>due {formatTs(approval.due_at)}</span>
+                          <span>due {formatDateTime(approval.due_at)}</span>
                         )}
                       </div>
 
@@ -308,11 +273,7 @@ export default function ApprovalsPage() {
                             Could not load the details. It may be routed to a manager.
                           </p>
                         )}
-                        {detail && typeof detail === "object" && (
-                          <pre className="mt-1.5 max-h-48 overflow-auto rounded bg-muted/60 px-2 py-1.5 text-xs leading-relaxed text-foreground/70">
-                            {JSON.stringify(detail.source_detail ?? {}, null, 2)}
-                          </pre>
-                        )}
+                        {detail && typeof detail === "object" && <ApprovalDetailView detail={detail} />}
                       </details>
                     </div>
 
@@ -323,7 +284,7 @@ export default function ApprovalsPage() {
                           variant="outline"
                           disabled={isProcessing}
                           onClick={() => decide(approval, "reject")}
-                          className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10"
+                          className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                         >
                           {isProcessing ? <Loader2 className="size-3.5 animate-spin" /> : <XCircle className="size-3.5" />}
                           Reject
@@ -332,7 +293,6 @@ export default function ApprovalsPage() {
                           size="sm"
                           disabled={isProcessing}
                           onClick={() => decide(approval, "approve")}
-                          className="gap-1.5 bg-[color-mix(in_oklab,var(--success)_72%,black)] text-white hover:bg-[color-mix(in_oklab,var(--success)_62%,black)]"
                         >
                           {isProcessing ? (
                             <Loader2 className="size-3.5 animate-spin" />
@@ -349,7 +309,6 @@ export default function ApprovalsPage() {
             })}
           </div>
         )}
-      </div>
-    </div>
+    </PageContainer>
   );
 }

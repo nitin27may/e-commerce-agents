@@ -161,13 +161,12 @@ test.describe("Customer Role (Alice)", () => {
     }
   });
 
-  test("agent catalog page shows the agents", async ({ page }) => {
-    // /marketplace was removed; the catalog is /agents. ui-smoke.spec.ts already
-    // records that removal — these tests kept pointing at the deleted route.
-    await page.goto("/agents");
-    await page.waitForLoadState("networkidle");
-    // Wait for agent cards to load — match display names or category text
-    await expect(page.getByText(/Product Discovery|Order Management|Marketplace|agent/i).first()).toBeVisible({ timeout: 15000 });
+  test("the agent catalog and runs are closed to customers", async ({ page }) => {
+    // Customers get answers, not machinery: /agents and /runs are staff pages (components/staff-only.tsx).
+    for (const path of ["/agents", "/runs"]) {
+      await page.goto(path);
+      await expect(page.getByRole("heading", { name: "Access Denied" })).toBeVisible({ timeout: 15000 });
+    }
   });
 
   test("profile page shows user info and loyalty tier", async ({ page }) => {
@@ -185,9 +184,9 @@ test.describe("Customer Role (Alice)", () => {
     // Navigate to Orders
     await page.getByRole("link", { name: /orders/i }).first().click();
     await expect(page).toHaveURL(/\/orders/);
-    // Navigate to the agent catalog
-    await page.getByRole("link", { name: /^agents$/i }).first().click();
-    await expect(page).toHaveURL(/\/agents/);
+    // Staff pages are not in a customer's navigation
+    await expect(page.getByRole("link", { name: /^agents$/i })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /^runs$/i })).toHaveCount(0);
     // Admin link should NOT be visible for customer
     await expect(page.getByRole("link", { name: /admin/i })).not.toBeVisible();
   });
@@ -231,9 +230,7 @@ test.describe("Admin Role", () => {
   test("admin audit page loads", async ({ page }) => {
     await page.goto("/admin/audit");
     await page.waitForLoadState("networkidle");
-    // The page's heading is "Agent Runs" — it renders the run history rather than a
-    // generic audit log, so /audit|log/ matched nothing on a page that loads fine.
-    await expect(page.getByText(/agent runs|access denied/i).first()).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { name: /^audit$/i })).toBeVisible({ timeout: 10000 });
   });
 
   test("admin can browse products and orders", async ({ page }) => {
@@ -271,10 +268,9 @@ test.describe("Power User Role", () => {
     await expect(page.locator("textarea").first()).toBeVisible();
   });
 
-  test("power user can browse the agent catalog", async ({ page }) => {
+  test("power user cannot open the agent catalog", async ({ page }) => {
     await page.goto("/agents");
-    await page.waitForLoadState("networkidle");
-    await expect(page.getByText(/Product Discovery|Order Management|Marketplace|agent/i).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("heading", { name: "Access Denied" })).toBeVisible({ timeout: 15000 });
   });
 
   test("power user profile shows power_user role", async ({ page }) => {

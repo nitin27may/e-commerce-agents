@@ -36,7 +36,8 @@ brings CORS back with it.
     orders, checkout, profile, admin, seller); `login`, `signup`.
 - `src/components/` — `ui/` (shadcn + primitives: StatCard, Chart, Skeleton,
   ThemeToggle, command-palette), `chat/` (RichMessage, product/order cards,
-  AgentTimeline), `shop/`, `landing/`, `home/`, `sidebar`, `top-bar`.
+  `chat-view` (the chat; `devView` adds the staff Lab's timeline, graph, grounding report
+  and mode switcher)), `shop/`, `landing/`, `home/`, `sidebar`, `top-bar`.
 - `src/lib/` — `api.ts` (typed client + SSE `chatStream`), `auth-context`,
   `cart-context`, `nav.ts`, `motion.ts`, `scenarios.ts`, `format`, `images`.
 

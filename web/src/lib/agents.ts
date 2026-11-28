@@ -27,10 +27,6 @@ export interface AgentMeta {
   tagline: string;
   description: string;
   icon: LucideIcon;
-  /** Tailwind text-color class for the accent (light + dark). */
-  accentText: string;
-  /** Tailwind bg-color class for icon backdrop (light + dark). */
-  accentBg: string;
   tools: AgentTool[];
   examplePrompts: string[];
 }
@@ -45,8 +41,6 @@ export const AGENTS: AgentMeta[] = [
     description:
       "Product Discovery understands what you're looking for — whether you describe it precisely or vaguely. It combines keyword filtering, semantic pgvector embeddings, and price-trend data to surface the right products. It also reads your purchase history to personalize results.",
     icon: Search,
-    accentText: "text-cyan-600 dark:text-cyan-400",
-    accentBg: "bg-cyan-50 dark:bg-cyan-950",
     tools: [
       { name: "search_products", description: "Keyword + filter search across the catalog by category, price range, rating, or any combination." },
       { name: "semantic_search", description: "Embedding-based similarity search (pgvector). Best for vague queries like 'something cozy for winter'." },
@@ -76,8 +70,6 @@ export const AGENTS: AgentMeta[] = [
     description:
       "Order Management handles everything after you click buy. It can look up any order, track shipments in real time, process cancellations and modifications for orders that haven't shipped, manage the full return and refund workflow, and handle your shopping cart — including applying coupons and setting delivery addresses.",
     icon: Package,
-    accentText: "text-blue-600 dark:text-blue-400",
-    accentBg: "bg-blue-50 dark:bg-blue-950",
     tools: [
       { name: "get_user_orders", description: "List your recent orders with optional status filter (placed, shipped, delivered, cancelled, etc.)." },
       { name: "get_order_details", description: "Full order info including line items, pricing, status history, and shipping address." },
@@ -112,8 +104,6 @@ export const AGENTS: AgentMeta[] = [
     description:
       "Pricing & Promotions finds you the best deal. It validates coupon codes, identifies active promotions, checks bundle eligibility, and calculates your loyalty tier discount. The cart optimizer goes further — it evaluates every applicable discount and returns the combination that saves you the most.",
     icon: Tag,
-    accentText: "text-amber-600 dark:text-amber-400",
-    accentBg: "bg-amber-50 dark:bg-amber-950",
     tools: [
       { name: "validate_coupon", description: "Check a coupon code against expiry, minimum spend, usage limits, and category restrictions." },
       { name: "optimize_cart", description: "Evaluate all available coupons, promotions, and loyalty discounts and return the optimal combination." },
@@ -142,8 +132,6 @@ export const AGENTS: AgentMeta[] = [
     description:
       "Review & Sentiment goes beyond star ratings. It breaks reviews down by topic (quality, value, design, shipping), tracks sentiment over time, detects suspicious or fake reviews, and surfaces the genuine signal in customer feedback. Sellers can also use it to draft professional responses to reviews.",
     icon: Star,
-    accentText: "text-emerald-600 dark:text-emerald-400",
-    accentBg: "bg-emerald-50 dark:bg-emerald-950",
     tools: [
       { name: "get_product_reviews", description: "Paginated product reviews with sorting by newest, helpfulness, or rating." },
       { name: "analyze_sentiment", description: "Aggregate sentiment: average rating, rating distribution, pros/cons summary from review text." },
@@ -171,8 +159,6 @@ export const AGENTS: AgentMeta[] = [
     description:
       "Inventory & Fulfillment gives you an accurate picture of stock levels across all three regional warehouses and what shipping options are available. It estimates delivery time and cost for your location, compares carriers, tracks shipments, and can calculate the optimal fulfillment plan for multi-item orders.",
     icon: Warehouse,
-    accentText: "text-slate-600 dark:text-slate-300",
-    accentBg: "bg-slate-100 dark:bg-slate-800",
     tools: [
       { name: "check_stock", description: "Live stock levels across East, Central, and West warehouses for a product." },
       { name: "get_warehouse_availability", description: "Warehouse inventory plus upcoming restock schedules." },
@@ -200,8 +186,6 @@ export const AGENTS: AgentMeta[] = [
     description:
       "The Orchestrator is the entry point for every conversation. It classifies your intent, selects the right specialist agent (or combination of specialists), and coordinates the response. It uses the A2A protocol to call each specialist over HTTP, forwarding your identity and session context so specialists can provide personalized, context-aware answers.",
     icon: Network,
-    accentText: "text-primary",
-    accentBg: "bg-primary/10",
     tools: [
       {
         name: "call_specialist_agent",

@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { Store } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,13 @@ export default function SignupPage() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-background to-muted px-4">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
+          <Link
+            href="/shop"
+            aria-label="Go to the store"
+            className="mx-auto mb-4 flex size-10 items-center justify-center rounded-xl bg-primary"
+          >
+            <Store className="size-5 text-primary-foreground" aria-hidden />
+          </Link>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
             E-Commerce Agents
           </h1>

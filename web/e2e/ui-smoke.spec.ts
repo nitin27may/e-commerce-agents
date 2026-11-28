@@ -57,8 +57,7 @@ test.describe("authenticated shell", () => {
     await expect(
       page.getByRole("link", { name: "Product Search" }).first(),
     ).toBeVisible();
-    await expect(page.getByText("Recent Orders")).toBeVisible();
-    await expect(page.getByText("Specialist Agents")).toBeVisible();
+    await expect(page.getByText("Recent orders")).toBeVisible();
   });
 
   test("grouped sidebar shows admin nav (Usage, Audit) for admins", async ({ page, isMobile }) => {
@@ -129,9 +128,9 @@ test.describe("authenticated shell", () => {
     await mockApi(page);
     await page.goto("/admin/usage");
     await expect(
-      page.getByRole("heading", { name: /usage analytics/i }),
+      page.getByRole("heading", { level: 1, name: "Usage", exact: true }),
     ).toBeVisible();
-    await expect(page.getByText("Daily Activity")).toBeVisible();
+    await expect(page.getByText("Daily activity")).toBeVisible();
     // recharts renders an SVG surface
     await expect(page.locator("svg.recharts-surface").first()).toBeVisible();
   });
@@ -140,8 +139,9 @@ test.describe("authenticated shell", () => {
     await seedAuth(page, "admin");
     await mockApi(page);
     await page.goto("/admin/decisions");
-    await expect(page.getByRole("heading", { name: "Autonomous decisions" })).toBeVisible();
-    await expect(page.getByText(/1 of 20 actions and \$5\.00 of \$200\.00 used today/)).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Decisions", exact: true })).toBeVisible();
+    await expect(page.getByText("1 of 20", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("$5.00 of $200.00", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Waiting for approval").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Reverse", exact: true })).toHaveCount(1);
     await expect(page.getByRole("button", { name: /large delay/ })).toBeVisible();
@@ -151,7 +151,7 @@ test.describe("authenticated shell", () => {
     await seedAuth(page, "admin");
     await mockApi(page);
     await page.goto("/admin/returns");
-    await expect(page.getByRole("heading", { name: "Returns to inspect" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Returns", exact: true })).toBeVisible();
     const card = page.getByTestId("inspection-card");
     await expect(card.getByText(/Alice Johnson/)).toBeVisible();
     await expect(card.getByText(/Arrived with a cracked screen/)).toBeVisible();

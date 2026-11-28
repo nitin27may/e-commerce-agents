@@ -21,8 +21,8 @@ run, a model key this repository does not have, or an external system.
 
 | # | Item | Why it is here |
 |---|---|---|
-| 1 | [First real Azure deployment](#first-real-azure-deployment) | The Container Apps path is written and checked offline. It has never run against a real subscription. It is the last step, and several other items wait on it |
-| 2 | [The .NET 11 move](#the-net-11-move) | The .NET 11 move is prepared as draft PR #331. A separate change that needs no key and no Azure |
+| 1 | [First real Azure deployment](#first-real-azure-deployment) | **Done.** `scripts/azure-up.sh` deployed and tested from a clean subscription (#263); what is left is deployed evals and the course chapter |
+| 2 | [The .NET 11 move](#the-net-11-move) | **Done.** The .NET stack targets .NET 11 (#331) |
 | 3 | [Model-calling parity run](#model-calling-parity-run) | The keyless parity gate runs in CI; a comparison that calls a model does not. Also the .NET live baselines |
 | 4 | [Foundry features that need an Azure credential](#foundry-features-that-need-an-azure-credential) | Foundry evaluators logging to a project, the safety evaluator, hosted agents. They wait on item 1 |
 | 5 | [Publish the Azure reference](#publish-the-azure-reference) | Topologies with measured costs. The difference between them is the content |
@@ -38,27 +38,28 @@ The November 2026 audit produced issues #80 to #104, tracked in
 
 `infra/` (Bicep), `azure.yaml`, `scripts/azure-up.sh` and `scripts/azure-down.sh` deploy the Python
 stack to Azure Container Apps with PostgreSQL Flexible Server, Azure OpenAI and Key Vault, with
-optional Foundry, gateway, per-app identity and reference-profile modules. The
-Bicep builds and lints, and the scripts pass offline tests. **Nothing has run against a real
-subscription.** [azure-deployment.md](azure-deployment.md) describes the topology and lists every
-assumption a real run has to confirm.
+optional Foundry, gateway, per-app identity and reference-profile modules. **The `small` profile has
+run from a clean subscription** (#263): provisioned in about 8 minutes, then a smoke test with a real
+model, a return approval and a database check. What the real runs found and fixed is in
+[azure-deployment-stages.md](azure-deployment-stages.md#findings-from-the-real-runs). The `demo` and
+`reference` profiles and the optional API Management gateway have not had a real run yet.
 
 Cost and teardown are part of the deliverable: a reader who cannot cheaply undo a deployment will
-not try it. The run has a 10 USD cap and a key-free model path. It is done when four things hold:
+not try it. The run has a 10 USD budget alert (it notifies; it does not stop spending) and a key-free model path. All four
+conditions it was held to are met:
 
 - The stack comes up and a sanity script passes, with the model reached through a bearer token.
 - No model key exists anywhere in the deployment.
 - Teardown leaves nothing behind, checked by a script.
-- Spend stays under the cap, and the measured figure is recorded.
+- Spend stays under the budget, and the measured figure is recorded.
 
 The Postgres admin password stays, because Entra authentication for the database needs code on both stacks.
 Deployed evals, the `azure.yml` workflow end to end and the deployment chapter of the course follow once the run passes.
 
 ### The .NET 11 move
 
-The .NET stack targets `net11.0` on draft PR #331 (target framework, `global.json`, Dockerfile base images, the SDK in CI, the
-runtime-versioned packages). It is done when every .NET test and both mixed-stack boots pass on that PR. It is its own change,
-separate from the Azure run: merge it after the Azure deployment, and roll back with a single revert.
+Done in #331: the target framework, `global.json`, Dockerfile base images, the SDK in CI and the runtime-versioned
+packages moved together, and it rolls back with a single revert.
 
 ### Model-calling parity run
 
@@ -174,7 +175,7 @@ has the full entries and the known limits.
 - **Return lifecycle** ([#95](https://github.com/nitin27may/e-commerce-agents/issues/95), Python). An approved return waits for the carrier's first scan across restarts, then for support's inspection, then pays out once. Off unless `RETURN_LIFECYCLE_ENABLED`. See [return-lifecycle.md](return-lifecycle.md).
 - **Anthropic provider and a separate embeddings provider** ([#96](https://github.com/nitin27may/e-commerce-agents/issues/96)). `LLM_PROVIDER=anthropic` works on both stacks, covered by stubbed-transport tests only; it has never made a live call. `EMBEDDING_PROVIDER` / `EMBEDDING_*` are configured independently of the chat provider. See [configuration.md](configuration.md).
 - **MAF DevUI entry point** ([#98](https://github.com/nitin27may/e-commerce-agents/issues/98)). Browse the specialists and workflows in DevUI without touching the lock file. See [devui.md](devui.md).
-- **An Azure deployment path** ([#89](https://github.com/nitin27may/e-commerce-agents/issues/89)). Bicep, `azd` hooks and up/down scripts for Azure Container Apps, with managed identity for Azure OpenAI (`AZURE_OPENAI_AUTH=identity`) on both stacks. Checked offline and against a fake credential only; see [What's next](#first-real-azure-deployment).
+- **An Azure deployment path** ([#89](https://github.com/nitin27may/e-commerce-agents/issues/89)). Bicep, `azd` hooks and up/down scripts for Azure Container Apps, with managed identity for Azure OpenAI (`AZURE_OPENAI_AUTH=identity`) on both stacks. Deployed and tested from a clean subscription in #263; see [Deploy to Azure](azure-deployment.md).
 - **One frontend image for every environment.** The browser calls the frontend's own origin, and a route handler forwards `/api/*` to `ORCHESTRATOR_URL`, read per request. The orchestrator needs no public ingress and CORS is gone. Measured cost: about 160 ms on an 8-second turn, with the same number of stream frames.
 - **The agent registry fails loudly.** One validator per stack rejects a malformed `AGENT_REGISTRY` at startup. A bad value stops the process instead of producing a stack that passes its health check and cannot route. Scheme and host are checked; the port is not, because a managed endpoint has none.
 

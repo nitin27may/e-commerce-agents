@@ -4,19 +4,20 @@ import type { ComponentProps } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { motion } from "framer-motion";
-import { ChatProductCard } from "./product-card";
-import { ChatOrderCard } from "./order-card";
-import { ChatCheckoutCard } from "./checkout-card";
-import { ChatReturnCard } from "./return-card";
-import { ComparisonCard } from "./comparison-card";
-import { ChatSentimentCard } from "./sentiment-card";
-import { ChatInventoryCard } from "./inventory-card";
-import { ChatPricingCard } from "./pricing-card";
 import { listItem } from "@/lib/motion";
 import {
-  CardKind,
+  cardDedupeKey,
+  cardFacts,
+  cardFenceOpenRegex,
+  isCardFenceTag,
+  scanCardFences,
   validateCard,
+  warnDropped,
+  type Card,
+  type CardData,
+  type CardKind,
 } from "@/lib/chat-schemas";
+import { CARD_COMPONENTS } from "./card-registry";
 
 const CardMotion = ({ children }: { children: React.ReactNode }) => (
   <motion.div variants={listItem} initial="hidden" animate="visible">
@@ -36,9 +37,32 @@ const SANITIZE_SCHEMA = {
   },
 };
 
+// Element styles for answer text. The `prose` classes this used to rely on come from
+// @tailwindcss/typography, which was never installed, so lists rendered without bullets and
+// headings, tables and code as plain text. Explicit classes keep the chat's own type scale.
+const MARKDOWN_COMPONENTS: ComponentProps<typeof ReactMarkdown>["components"] = {
+  p: (props) => <p className="my-1 leading-relaxed" {...props} />,
+  ul: (props) => <ul className="my-1 list-disc space-y-0.5 pl-5" {...props} />,
+  ol: (props) => <ol className="my-1 list-decimal space-y-0.5 pl-5" {...props} />,
+  li: (props) => <li className="pl-0.5 marker:text-muted-foreground" {...props} />,
+  strong: (props) => <strong className="font-semibold text-foreground" {...props} />,
+  h1: (props) => <h3 className="mt-3 mb-1 text-base font-semibold" {...props} />,
+  h2: (props) => <h3 className="mt-3 mb-1 text-base font-semibold" {...props} />,
+  h3: (props) => <h4 className="mt-3 mb-1 text-sm font-semibold" {...props} />,
+  a: (props) => <a className="text-primary underline underline-offset-2" target="_blank" rel="noopener noreferrer" {...props} />,
+  code: (props) => <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]" {...props} />,
+  table: (props) => (
+    <div className="my-2 overflow-x-auto">
+      <table className="w-full border-collapse text-sm" {...props} />
+    </div>
+  ),
+  th: (props) => <th className="border-b px-2 py-1 text-left font-medium" {...props} />,
+  td: (props) => <td className="border-b px-2 py-1" {...props} />,
+};
+
 function SanitisedMarkdown({ children }: { children: string }) {
   return (
-    <ReactMarkdown rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}>
+    <ReactMarkdown rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]} components={MARKDOWN_COMPONENTS}>
       {children}
     </ReactMarkdown>
   );
@@ -50,256 +74,111 @@ interface RichMessageProps {
   onAction?: (message: string) => void;
 }
 
+function CardView({ card, onAction }: { card: Card; onAction?: (message: string) => void }) {
+  // CARD_COMPONENTS is keyed by the same kind as `card`, so the pairing is sound;
+  // TypeScript cannot correlate the two through a union, hence the widening.
+  const Component = CARD_COMPONENTS[card.kind] as React.ComponentType<{
+    data: Card["data"];
+    onAction?: (message: string) => void;
+  }>;
+  return <Component data={card.data} onAction={onAction} />;
+}
+
+/** Holds the place of a card whose fence is still streaming, so the answer does not jump when it lands. */
+function CardSkeleton() {
+  return (
+    <div
+      data-testid="card-skeleton"
+      aria-hidden
+      className="h-28 w-full max-w-lg animate-pulse rounded-xl border border-border bg-card"
+    />
+  );
+}
+
 export function RichMessage({ content, streaming, onAction }: RichMessageProps) {
-  const processed = streaming ? stripUnclosedFence(content) : content;
-  const segments = parseContent(processed);
+  const { content: visible, pending } = streaming ? stripUnclosedFence(content) : { content, pending: false };
+  const segments = parseContent(visible);
 
   return (
     <div className="space-y-3">
-      {segments.map((seg, i) => {
-        if (seg.type === "product" && seg.data) {
-          return (
-            <CardMotion key={i}>
-              <ChatProductCard data={seg.data} onAction={onAction} />
-            </CardMotion>
-          );
-        }
-        if (seg.type === "order" && seg.data) {
-          return (
-            <CardMotion key={i}>
-              <ChatOrderCard data={seg.data} onAction={onAction} />
-            </CardMotion>
-          );
-        }
-        if (seg.type === "checkout" && seg.data) {
-          return (
-            <CardMotion key={i}>
-              <ChatCheckoutCard data={seg.data} />
-            </CardMotion>
-          );
-        }
-        if (seg.type === "return" && seg.data) {
-          return (
-            <CardMotion key={i}>
-              <ChatReturnCard data={seg.data} />
-            </CardMotion>
-          );
-        }
-        if (seg.type === "comparison" && seg.data) {
-          return (
-            <CardMotion key={i}>
-              <ComparisonCard products={seg.data} onAction={onAction} />
-            </CardMotion>
-          );
-        }
-        if (seg.type === "sentiment" && seg.data) {
-          return (
-            <CardMotion key={i}>
-              <ChatSentimentCard data={seg.data} />
-            </CardMotion>
-          );
-        }
-        if (seg.type === "inventory" && seg.data) {
-          return (
-            <CardMotion key={i}>
-              <ChatInventoryCard data={seg.data} onAction={onAction} />
-            </CardMotion>
-          );
-        }
-        if (seg.type === "pricing" && seg.data) {
-          return (
-            <CardMotion key={i}>
-              <ChatPricingCard data={seg.data} />
-            </CardMotion>
-          );
-        }
-        return (
-          <div
-            key={i}
-            className="prose prose-sm prose-slate max-w-none prose-p:my-1 prose-li:my-0.5 prose-headings:mt-3 prose-headings:mb-1 prose-ul:my-1 prose-ol:my-1 prose-strong:text-foreground dark:prose-invert"
-          >
+      {segments.map((seg, i) =>
+        seg.type === "text" ? (
+          <div key={i} className="max-w-none" data-testid="assistant-text">
             <SanitisedMarkdown>{seg.text}</SanitisedMarkdown>
           </div>
-        );
-      })}
+        ) : (
+          <CardMotion key={i}>
+            <CardView card={segmentCard(seg)} onAction={onAction} />
+          </CardMotion>
+        ),
+      )}
+      {pending && <CardSkeleton />}
     </div>
   );
 }
 
 // ─── Types ────────────────────────────────────────────────────────────
 
-type CardData<C extends (props: never) => unknown> = Parameters<C>[0] extends { data: infer D } ? D : never;
-type ProductCardData = CardData<typeof ChatProductCard>;
-type ProductPair = ComponentProps<typeof ComparisonCard>["products"];
-
 /**
- * One piece of a parsed message. Card segments carry the data their component
- * accepts; `parseCodeBlocks` produces it through `validateCard`, the plain-text
- * fallbacks build it from regex captures.
+ * One piece of a parsed message: markdown text, or a validated card whose
+ * `type` is its kind in lib/chat-schemas.ts's CARD_REGISTRY.
  */
 export type Segment =
   | { type: "text"; text: string; data?: undefined }
-  | { type: "product"; text: string; data?: ProductCardData }
-  | { type: "order"; text: string; data?: CardData<typeof ChatOrderCard> }
-  | { type: "checkout"; text: string; data?: CardData<typeof ChatCheckoutCard> }
-  | { type: "return"; text: string; data?: CardData<typeof ChatReturnCard> }
-  | { type: "comparison"; text: string; data?: ProductPair }
-  | { type: "sentiment"; text: string; data?: CardData<typeof ChatSentimentCard> }
-  | { type: "inventory"; text: string; data?: CardData<typeof ChatInventoryCard> }
-  | { type: "pricing"; text: string; data?: CardData<typeof ChatPricingCard> };
+  | { [K in CardKind]: { type: K; data: CardData<K> } }[CardKind];
 
-// ─── Streaming helper: drop a trailing unclosed structured fence ─────
+type CardSegment = Exclude<Segment, { type: "text" }>;
+
+const segmentCard = (seg: CardSegment): Card => ({ kind: seg.type, data: seg.data }) as Card;
+const cardSegment = (card: Card): CardSegment => ({ type: card.kind, data: card.data }) as CardSegment;
+
+// ─── Streaming helper: hide a trailing unclosed card fence ────────────
 //
 // While chunks arrive, a fence like ```product\n{"id":"p1"... may be
-// half-written. We don't want raw JSON flickering in the bubble — hide
-// everything from the unclosed opener until the stream finishes.
+// half-written. Raw JSON must not flicker in the message, so everything from
+// the unclosed opener on is hidden until the stream finishes, and the caller
+// shows a skeleton in its place.
 
-function stripUnclosedFence(content: string): string {
-  // `products` listed before `product` so the longer kind wins; no trailing
-  // \n requirement — the SSE transport can drop the newline after the fence
-  // marker, collapsing ```product\n{...} into ```product{...}.
-  const openRegex = /```(products|product|order|checkout|return|sentiment|inventory|pricing)/g;
-  let cursor = 0;
-  let lastUnclosedStart = -1;
+export function stripUnclosedFence(content: string): { content: string; pending: boolean } {
+  const openRegex = cardFenceOpenRegex();
   let match;
   while ((match = openRegex.exec(content)) !== null) {
-    const openStart = match.index;
-    const afterOpen = openStart + match[0].length;
-    const closeIdx = content.indexOf("```", afterOpen);
-    if (closeIdx === -1) {
-      lastUnclosedStart = openStart;
-      break;
-    }
-    cursor = closeIdx + 3;
-    openRegex.lastIndex = cursor;
+    const closeIdx = content.indexOf("```", match.index + match[0].length);
+    if (closeIdx === -1) return { content: content.slice(0, match.index).trimEnd(), pending: true };
+    openRegex.lastIndex = closeIdx + 3;
   }
-  if (lastUnclosedStart === -1) return content;
-  return content.slice(0, lastUnclosedStart).trimEnd();
+  return { content, pending: false };
 }
 
-// ─── 1. Fenced Code Block Parser (primary path) ──────────────────────
-
-// validateCard's zod output is passthrough-typed; each card component narrows it
-// to the fields it reads, so the hand-off is typed once here per kind.
-function validatedSegment(kind: CardKind, raw: unknown): Segment | null {
-  const validated = validateCard(kind, raw);
-  if (!validated) return null;
-  return { type: kind, text: "", data: validated } as Segment;
-}
+// ─── 1. Card fences (primary path) ────────────────────────────────────
 
 function parseCodeBlocks(content: string): Segment[] | null {
-  // The newline after the fence marker is OPTIONAL: the streaming transport
-  // frames a lone "\n" LLM token as an empty SSE data line, so it gets dropped
-  // and ```product\n{...} arrives as ```product{...}. We tolerate any
-  // whitespace (incl. none) and require the body to start with { or [ so a
-  // stray ```product-ideas block isn't misread as a card.
-  const codeBlockRegex = /```(products|product|order|checkout|return|sentiment|inventory|pricing)\s*([[{][\s\S]*?)```/g;
+  const fences = scanCardFences(content);
+  if (fences.length === 0) return null;
+
+  // A fence that failed validation contributes no card; the text around it
+  // survives as its own segment, so nothing raw is ever shown.
   const segments: Segment[] = [];
-  let lastIndex = 0;
-  let match;
-  let found = false;
-
-  while ((match = codeBlockRegex.exec(content)) !== null) {
-    found = true;
-    if (match.index > lastIndex) {
-      const text = content.slice(lastIndex, match.index).trim();
-      if (text) segments.push({ type: "text", text });
-    }
-    try {
-      const data = JSON.parse(match[2].trim());
-      if (match[1] === "products" && Array.isArray(data)) {
-        // Two products → side-by-side comparison card
-        if (data.length === 2) {
-          const [p1, p2] = data.map((d: unknown) => validateCard("product", d));
-          if (p1 && p2) {
-            segments.push({ type: "comparison", text: "", data: [p1, p2] });
-          } else {
-            // Fallback: render as individual cards
-            data.forEach((d: unknown) => {
-              const validated = validateCard("product", d);
-              if (validated) segments.push({ type: "product", text: "", data: validated });
-            });
-          }
-        } else {
-          data.forEach((d: unknown) => {
-            const validated = validateCard("product", d);
-            if (validated) {
-              segments.push({ type: "product", text: "", data: validated });
-            }
-          });
-        }
-      } else {
-        const kind = match[1] as CardKind;
-        const segment = validatedSegment(kind, data);
-        if (segment) {
-          segments.push(segment);
-        } else {
-          // Schema rejected the payload — drop the fence rather than
-          // showing the raw JSON, matching the "products" array branch's
-          // existing silent-drop convention above (an item that fails
-          // validateCard there is dropped too, not shown raw). The
-          // surrounding conversational text is unaffected — it was
-          // already captured as its own segment by the lastIndex
-          // bookkeeping around this match. Logged so a bad LLM response
-          // is still debuggable without being user-visible.
-          warnDropped(`dropped a \`${kind}\` fence that failed schema validation`, data);
-        }
-      }
-    } catch (err) {
-      // Malformed JSON inside a recognized fence tag — same treatment:
-      // drop it, don't show the raw (broken) JSON to the user.
-      warnDropped(`dropped a \`${match[1]}\` fence with malformed JSON`, err);
-    }
-    lastIndex = match.index + match[0].length;
+  let cursor = 0;
+  for (const fence of fences) {
+    const before = content.slice(cursor, fence.start).trim();
+    if (before) segments.push({ type: "text", text: before });
+    segments.push(...fence.cards.map(cardSegment));
+    cursor = fence.end;
   }
-
-  if (!found) return null;
-
-  if (lastIndex < content.length) {
-    const text = content.slice(lastIndex).trim();
-    if (text) segments.push({ type: "text", text });
-  }
+  const after = content.slice(cursor).trim();
+  if (after) segments.push({ type: "text", text: after });
 
   return dedupeCards(suppressRedundantText(segments));
 }
 
-// Collapse duplicate cards. The orchestrator often restates a specialist's
-// product/order data, so the same item can arrive twice — once as a clean
-// fenced block (→ card) and once as a collapsed-fence copy (now also a card).
-// Keyed by kind + id so duplicates render once.
+// The orchestrator often restates a specialist's card, so the same item can
+// arrive twice in one message. Keyed by kind + id (CARD_REGISTRY's dedupeKey).
 function dedupeCards(segments: Segment[]): Segment[] {
   const seen = new Set<string>();
   return segments.filter((seg) => {
-    let key: string | null = null;
-    if (seg.type === "product" && seg.data) {
-      const id = (seg.data as { id?: string }).id;
-      key = id ? `product:${id}` : null;
-    } else if (seg.type === "order" && seg.data) {
-      const d = seg.data as { id?: string; order_id?: string };
-      const id = d.id ?? d.order_id;
-      key = id ? `order:${id}` : null;
-    } else if (seg.type === "comparison" && Array.isArray(seg.data)) {
-      key =
-        "comparison:" +
-        (seg.data as Array<{ id?: string }>).map((p) => p?.id ?? "").join(",");
-    } else if (seg.type === "checkout" && seg.data) {
-      // No id on a checkout — key on the cart shape (the orchestrator often
-      // restates the same checkout twice in one message).
-      const d = seg.data as { item_count?: number; total?: number };
-      key = `checkout:${d.item_count ?? ""}:${d.total ?? ""}`;
-    } else if (seg.type === "return" && seg.data) {
-      const d = seg.data as { return_id?: string; order_id?: string };
-      key = `return:${d.return_id ?? d.order_id ?? ""}`;
-    } else if (seg.type === "sentiment" && seg.data) {
-      const d = seg.data as { product_id?: string; product_name?: string };
-      key = `sentiment:${d.product_id ?? d.product_name ?? ""}`;
-    } else if (seg.type === "inventory" && seg.data) {
-      const d = seg.data as { product_id?: string; product_name?: string };
-      key = `inventory:${d.product_id ?? d.product_name ?? ""}`;
-    } else if (seg.type === "pricing" && seg.data) {
-      const d = seg.data as { original_total?: number; final_total?: number; coupons?: unknown[] };
-      key = `pricing:${d.original_total ?? ""}:${d.final_total ?? ""}:${d.coupons?.length ?? ""}`;
-    }
+    if (seg.type === "text") return true;
+    const key = cardDedupeKey(segmentCard(seg));
     if (key === null) return true;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -307,17 +186,48 @@ function dedupeCards(segments: Segment[]): Segment[] {
   });
 }
 
-// Remove text segments that are plain-text dumps of adjacent structured cards.
+const LIST_ITEM = /^\s*(?:[-*•+]|\d+[.)])\s+/;
+
+/**
+ * Drops the bullet list at one edge of `text` (the end, when the card follows;
+ * the start, when it precedes) if most of its items repeat a value the card
+ * already shows. Lists elsewhere in the text are analysis, not restatement, and stay.
+ */
+export function dropRestatedList(text: string, facts: string[], edge: "start" | "end"): string {
+  if (facts.length === 0) return text;
+  const lines = text.split("\n");
+  const step = edge === "start" ? 1 : -1;
+  let i = edge === "start" ? 0 : lines.length - 1;
+  while (i >= 0 && i < lines.length && lines[i].trim() === "") i += step;
+  const first = i;
+  while (i >= 0 && i < lines.length && LIST_ITEM.test(lines[i])) i += step;
+  const items = edge === "start" ? lines.slice(first, i) : lines.slice(i + 1, first + 1);
+  if (items.length === 0) return text;
+
+  const needles = facts.map((f) => f.toLowerCase());
+  const restated = items.filter((item) => needles.some((n) => item.toLowerCase().includes(n))).length;
+  if (restated * 2 <= items.length) return text;
+
+  return (edge === "start" ? lines.slice(i) : lines.slice(0, i + 1)).join("\n");
+}
+
+// Remove text that only restates an adjacent card: a field-by-field dump, or a
+// bullet list of the card's own prices and names.
 function suppressRedundantText(segments: Segment[]): Segment[] {
-  const cardTypes = new Set(["order", "product", "products", "checkout", "return"]);
-  return segments.filter((seg, i) => {
-    if (seg.type !== "text") return true;
+  return segments.flatMap((seg, i): Segment[] => {
+    if (seg.type !== "text") return [seg];
     const prev = segments[i - 1];
     const next = segments[i + 1];
-    const adjacentToCard =
-      (prev && cardTypes.has(prev.type)) ||
-      (next && cardTypes.has(next.type));
-    return !(adjacentToCard && looksLikeStructuredDump(seg.text));
+    const prevCard = prev && prev.type !== "text" ? segmentCard(prev) : null;
+    const nextCard = next && next.type !== "text" ? segmentCard(next) : null;
+    if (!prevCard && !nextCard) return [seg];
+    if (looksLikeStructuredDump(seg.text)) return [];
+
+    let text = seg.text;
+    if (nextCard) text = dropRestatedList(text, cardFacts(nextCard), "end");
+    if (prevCard) text = dropRestatedList(text, cardFacts(prevCard), "start");
+    text = text.trim();
+    return text ? [{ type: "text", text }] : [];
   });
 }
 
@@ -397,13 +307,13 @@ function parseOrderInText(content: string): Segment[] | null {
 
   // Merge all order paragraphs and extract structured data
   const orderText = paragraphs.slice(startIdx, endIdx + 1).join("\n\n");
-  const orderData = extractOrderData(orderText);
+  const orderData = validateCard("order", extractOrderData(orderText));
   if (!orderData) return null;
 
   const segments: Segment[] = [];
   const introText = paragraphs.slice(0, startIdx).join("\n\n").trim();
   if (introText) segments.push({ type: "text", text: introText });
-  segments.push({ type: "order", text: "", data: orderData });
+  segments.push({ type: "order", data: orderData });
   const outroText = paragraphs.slice(endIdx + 1).join("\n\n").trim();
   if (outroText) segments.push({ type: "text", text: outroText });
   return segments;
@@ -502,10 +412,11 @@ function parseProductsInText(content: string): Segment[] | null {
   let productCount = 0;
 
   for (const para of paragraphs) {
-    const product = tryParseProductParagraph(para.trim());
+    const parsed = tryParseProductParagraph(para.trim());
+    const product = parsed && validateCard("product", parsed);
     if (product) {
       productCount++;
-      segments.push({ type: "product", text: "", data: product });
+      segments.push({ type: "product", data: product });
     } else {
       const text = para.trim();
       if (text) segments.push({ type: "text", text });
@@ -620,39 +531,16 @@ function tryParseProductParagraph(
 
 // ─── Guard: strip any JSON-shaped fence this parser doesn't know about ──
 //
-// parseCodeBlocks only recognizes the 5 known card tags. Every real
-// backend-emitted fence tag matches one of those today (verified against
-// every prompt YAML that emits a fence), so this is defense against a
-// tag this parser was never taught — an LLM hallucinating a wrong tag
-// name, or a future card type added to the backend before this file is
-// updated for it — not a currently-reachable path. Without this, an
-// unrecognized tag falls through untouched to ReactMarkdown, which
-// treats any ``` fence as a generic code block and renders the raw JSON
-// verbatim: exactly the "never show raw JSON" failure this component
-// exists to prevent for the 5 known tags.
-/**
- * A dropped card is never shown to the user, so say so in the console: always in
- * development, and in a production build when the page URL carries
- * `?debug=cards`. Behaviour is otherwise unchanged (the fence is still dropped).
- */
-function warnDropped(message: string, detail?: unknown): void {
-  let debug = process.env.NODE_ENV !== "production";
-  if (!debug && typeof window !== "undefined") {
-    try {
-      debug = new URLSearchParams(window.location.search).get("debug") === "cards";
-    } catch {
-      // a locked-down window.location: stay quiet
-    }
-  }
-  if (debug) console.warn(`[rich-message] ${message}`, detail ?? "");
-}
+// A tag outside CARD_REGISTRY (a model hallucinating a tag, or a backend card
+// type this file has not caught up with) would otherwise fall through to
+// ReactMarkdown, which renders any ``` fence as a code block: raw JSON on
+// screen, exactly what this component exists to prevent.
 
-const KNOWN_CARD_TAGS = new Set(["products", "product", "order", "checkout", "return", "sentiment", "inventory", "pricing"]);
 const ANY_FENCE_RE = /```([a-zA-Z0-9_-]*)\s*([[{][\s\S]*?)```/g;
 
 function stripUnrecognizedJsonFences(content: string): string {
   return content.replace(ANY_FENCE_RE, (full, tag: string) => {
-    if (KNOWN_CARD_TAGS.has(tag)) return full; // parseCodeBlocks handles these
+    if (isCardFenceTag(tag)) return full;
     warnDropped(`dropped an unrecognized \`${tag || "(untagged)"}\` JSON-shaped fence`);
     return "";
   });

@@ -29,3 +29,9 @@ export function formatDuration(ms: number | null | undefined): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
 }
+
+/** The first eight characters of an order id: the one short form used on every page and card. */
+export function shortOrderId(id: string | null | undefined): string {
+  if (!id) return "";
+  return id.slice(0, 8);
+}

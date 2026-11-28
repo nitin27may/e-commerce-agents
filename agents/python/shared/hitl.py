@@ -33,6 +33,7 @@ from shared.config import settings
 from shared.context import current_session_id, current_user_email
 from shared.idempotency import idempotent, run_once
 from shared.log_safe import log_safe
+from shared.return_label import new_label_token
 
 logger = logging.getLogger(__name__)
 
@@ -586,6 +587,10 @@ async def _execute_action(
         refund_method = tool_input.get("refund_method")
         if refund_method not in _REFUND_METHODS:
             refund_method = "original_payment"
+        # An approved return needs what a directly initiated one gets (shared/tools/return_tools.py): a label the
+        # customer can download and print, and the refund amount. Without them the customer's return ended with
+        # nothing to ship the item back with.
+        return_label_url = f"/api/returns/{new_label_token()}/label"
         async with pool.acquire() as conn:
             # NOT EXISTS guards against a second run inserting a second
             # returns row for the same order (a double-execution here
@@ -593,22 +598,26 @@ async def _execute_action(
             # cancel_order's WHERE ... status IN (...) or process_refund's
             # WHERE ... status NOT IN (...) above).
             row = await conn.fetchrow(
-                """INSERT INTO returns (order_id, user_id, reason, status, refund_method)
-                   SELECT o.id, o.user_id, $3, 'approved', $4
+                """INSERT INTO returns (order_id, user_id, reason, status, refund_method,
+                                       return_label_url, refund_amount)
+                   SELECT o.id, o.user_id, $3, 'approved', $4, $5, o.total
                    FROM orders o
                    JOIN users u ON o.user_id = u.id
                    WHERE o.id = $1 AND u.email = $2
                      AND NOT EXISTS (SELECT 1 FROM returns r WHERE r.order_id = o.id)
-                   RETURNING id""",
+                   RETURNING id, refund_amount""",
                 order_id,
                 user_email,
                 reason,
                 refund_method,
+                return_label_url,
             )
         if row:
             return {
                 "success": True,
                 "return_id": str(row["id"]),
+                "return_label_url": return_label_url,
+                "refund_amount": float(row["refund_amount"]) if row["refund_amount"] is not None else None,
                 "message": "Return approved and initiated.",
             }
         existing = await pool.fetchval(

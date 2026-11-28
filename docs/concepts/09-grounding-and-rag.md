@@ -62,7 +62,7 @@ closes the gap the paragraph above described: it isn't asking "did retrieval hap
 
 This runs on every real request via `GroundingVerificationMiddleware`, wired into
 `build_specialist_middleware()` (see [guardrails](10-guardrails.md) for the full middleware
-stack), and the result is visible in the product UI: [`web/src/components/chat/grounding-badge.tsx`](https://github.com/nitin27may/e-commerce-agents/blob/main/web/src/components/chat/grounding-badge.tsx)
+stack), and the result is visible in the staff Lab (`/lab`; shoppers get the checked answer, not the report): [`web/src/components/chat/grounding-badge.tsx`](https://github.com/nitin27may/e-commerce-agents/blob/main/web/src/components/chat/grounding-badge.tsx)
 renders "N facts verified against the database, M unverified" under any message that made a
 checkable claim, expandable to see exactly which claim and why.
 

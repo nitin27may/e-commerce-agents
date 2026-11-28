@@ -5,13 +5,10 @@ import { useRouter } from "next/navigation";
 import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
-import { Separator } from "@/components/ui/separator";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/card";
+import { formatDuration, formatNumber } from "@/lib/format";
+import { StatCard } from "@/components/ui/stat-card";
+import { PageContainer, PageHeader } from "@/components/ui/page-header";
+import { AccessDenied } from "@/components/ui/access-denied";
 import {
   Table,
   TableHeader,
@@ -26,8 +23,7 @@ import {
   Bot,
   Clock,
   Loader2,
-  ShieldAlert,
-  LayoutDashboard,
+  Shield,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -65,20 +61,7 @@ interface UsageStats {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatNumber(n: number | undefined | null): string {
-  if (n == null) return "0";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
-
-function formatDuration(ms: number | undefined | null): string {
-  if (ms == null) return "0ms";
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
-}
-
-function formatDate(dateStr: string): string {
+function formatDay(dateStr: string): string {
   try {
     return new Date(dateStr).toLocaleDateString("en-US", {
       month: "short",
@@ -147,48 +130,18 @@ export default function AdminDashboardPage() {
 
   if (authLoading) return null;
 
-  // Access denied for non-admins
   if (!isAdmin) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-destructive/10">
-            <ShieldAlert className="size-8 text-destructive" />
-          </div>
-          <h2 className="mt-4 text-lg font-semibold text-foreground">
-            Access Denied
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            You do not have admin privileges to view this page.
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDenied description="You do not have admin privileges to view this page." />;
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-primary">
-              <LayoutDashboard className="size-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">
-                Admin Dashboard
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Platform overview and agent usage metrics
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+    <PageContainer>
+      <PageHeader
+        icon={Shield}
+        title="Admin overview"
+        description="Platform activity and agent usage"
+      />
 
-      {/* Content */}
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {loading && (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="size-6 animate-spin text-primary" />
@@ -205,162 +158,91 @@ export default function AdminDashboardPage() {
         )}
 
         {!loading && !error && stats && (
-          <div className="space-y-8">
-            {/* Overview cards */}
+          <div className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Total Invocations
-                  </CardTitle>
-                  <Activity className="size-4 text-primary" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-foreground">
-                    {formatNumber(stats.total_invocations)}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Total Tokens
-                  </CardTitle>
-                  <Zap className="size-4 text-amber-500" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-foreground">
-                    {formatNumber(stats.total_tokens_in + stats.total_tokens_out)}
-                  </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {formatNumber(stats.total_tokens_in)} in /{" "}
-                    {formatNumber(stats.total_tokens_out)} out
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Active Agents
-                  </CardTitle>
-                  <Bot className="size-4 text-sky-500" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-foreground">
-                    {stats.active_agents}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Pending Requests
-                  </CardTitle>
-                  <Clock className="size-4 text-orange-500" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-foreground">
-                    {stats.pending_requests}
-                  </div>
-                </CardContent>
-              </Card>
+              <StatCard label="Invocations" value={formatNumber(stats.total_invocations)} icon={Activity} />
+              <StatCard
+                label="Tokens"
+                value={formatNumber(stats.total_tokens_in + stats.total_tokens_out)}
+                icon={Zap}
+                hint={`${formatNumber(stats.total_tokens_in)} in / ${formatNumber(stats.total_tokens_out)} out`}
+              />
+              <StatCard label="Active agents" value={stats.active_agents} icon={Bot} />
+              <StatCard label="Pending requests" value={stats.pending_requests} icon={Clock} />
             </div>
 
-            {/* Per-agent usage */}
-            <div className="rounded-xl bg-card ring-1 ring-foreground/10">
-              <div className="px-4 py-3">
-                <h2 className="text-sm font-semibold text-muted-foreground">
-                  Per-Agent Usage Breakdown
+            <div className="grid gap-6 lg:grid-cols-3">
+              <section className="rounded-xl bg-card ring-1 ring-foreground/10 lg:col-span-2" aria-labelledby="per-agent-usage">
+                <h2 id="per-agent-usage" className="border-b px-4 py-3 text-sm font-semibold text-foreground">
+                  Usage by agent
                 </h2>
-              </div>
-              <Separator />
-              {stats.per_agent.length === 0 ? (
-                <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                  No agent usage data available.
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead>Agent</TableHead>
-                      <TableHead className="text-right">Invocations</TableHead>
-                      <TableHead className="text-right">Tokens In</TableHead>
-                      <TableHead className="text-right">Tokens Out</TableHead>
-                      <TableHead className="text-right">Avg Duration</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {stats.per_agent.map((agent) => (
-                      <TableRow key={agent.agent_id}>
-                        <TableCell className="font-medium text-foreground">
-                          {agent.agent_name}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatNumber(agent.invocations)}
-                        </TableCell>
-                        <TableCell className="text-right text-muted-foreground">
-                          {formatNumber(agent.tokens_in)}
-                        </TableCell>
-                        <TableCell className="text-right text-muted-foreground">
-                          {formatNumber(agent.tokens_out)}
-                        </TableCell>
-                        <TableCell className="text-right text-muted-foreground">
-                          {formatDuration(agent.avg_duration_ms)}
-                        </TableCell>
+                {stats.per_agent.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                    No agent usage recorded yet.
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="pl-4">Agent</TableHead>
+                        <TableHead className="text-right">Invocations</TableHead>
+                        <TableHead className="text-right">Tokens in</TableHead>
+                        <TableHead className="text-right">Tokens out</TableHead>
+                        <TableHead className="pr-4 text-right">Avg. duration</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </div>
+                    </TableHeader>
+                    <TableBody>
+                      {stats.per_agent.map((agent) => (
+                        <TableRow key={agent.agent_id}>
+                          <TableCell className="pl-4 font-medium text-foreground">
+                            {agent.agent_name}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatNumber(agent.invocations)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {formatNumber(agent.tokens_in)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {formatNumber(agent.tokens_out)}
+                          </TableCell>
+                          <TableCell className="pr-4 text-right tabular-nums text-muted-foreground">
+                            {formatDuration(agent.avg_duration_ms)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </section>
 
-            {/* 7-day trend */}
-            <div className="rounded-xl bg-card ring-1 ring-foreground/10">
-              <div className="px-4 py-3">
-                <h2 className="text-sm font-semibold text-muted-foreground">
-                  7-Day Trend
+              <section className="rounded-xl bg-card ring-1 ring-foreground/10" aria-labelledby="daily-trend">
+                <h2 id="daily-trend" className="border-b px-4 py-3 text-sm font-semibold text-foreground">
+                  Last 7 days
                 </h2>
-              </div>
-              <Separator />
-              {stats.daily_trend.length === 0 ? (
-                <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                  No trend data available.
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {stats.daily_trend.map((day) => (
-                    <div
-                      key={day.date}
-                      className="flex items-center justify-between px-4 py-3"
-                    >
-                      <span className="text-sm font-medium text-muted-foreground">
-                        {formatDate(day.date)}
-                      </span>
-                      <div className="flex items-center gap-6 text-sm text-muted-foreground">
-                        <span>
-                          <span className="font-medium text-muted-foreground">
-                            {formatNumber(day.invocations)}
-                          </span>{" "}
-                          calls
+                {stats.daily_trend.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                    No activity in the last 7 days.
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {stats.daily_trend.map((day) => (
+                      <li key={day.date} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                        <span className="text-muted-foreground">{formatDay(day.date)}</span>
+                        <span className="tabular-nums">
+                          <span className="font-medium text-foreground">{formatNumber(day.invocations)}</span>{" "}
+                          <span className="text-muted-foreground">
+                            {day.invocations === 1 ? "call" : "calls"}
+                          </span>
                         </span>
-                        <span>
-                          <span className="font-medium text-muted-foreground">
-                            {formatNumber(day.tokens_in + day.tokens_out)}
-                          </span>{" "}
-                          tokens
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </PageContainer>
   );
 }

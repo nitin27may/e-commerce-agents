@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { skipWithoutKey } from "./no-key";
 
 /**
  * Issue #9 — a follow-up question must be answered using the previous turn.
@@ -49,11 +50,8 @@ async function sendMessageAndWaitForTurn(page: Page, message: string) {
 }
 
 async function lastAssistantText(page: Page): Promise<string> {
-  // Assistant bubbles only: the same rounded-2xl shape is used by the
-  // composer, so a bare [class*="rounded-2xl"] returns the prompt chrome
-  // ("auto products orders pricing … enter to send") instead of a reply.
-  // bg-muted is the assistant variant; user turns are bg-primary.
-  const bubbles = page.locator("div.rounded-2xl.bg-muted");
+  // The answer text of assistant turns only, never the composer or the user's own turns.
+  const bubbles = page.getByTestId("assistant-text");
   const count = await bubbles.count();
   expect(count, "no assistant message rendered").toBeGreaterThan(0);
   return (await bubbles.nth(count - 1).textContent()) ?? "";
@@ -63,6 +61,7 @@ test.describe("Follow-up questions keep conversation context (#9)", () => {
   test.setTimeout(180000);
 
   test("a follow-up that names no product still resolves to the one just shown", async ({ page }) => {
+    skipWithoutKey('"Show me the Sony WH-1000XM5 headphones" is not recorded');
     await login(page, "alice.johnson@gmail.com", "customer123");
     await page.goto("/chat");
 

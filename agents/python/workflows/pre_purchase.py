@@ -24,6 +24,10 @@ from shared.log_safe import log_safe
 logger = logging.getLogger(__name__)
 
 
+# The shopper reads these names in "I could not check: ..."; the state keys are internal.
+_READABLE = {"reviews": "reviews", "stock": "stock", "price_history": "price history", "shipping": "shipping"}
+
+
 @dataclass
 class ResearchState:
     """Carries the in-flight workflow state from executor to executor."""
@@ -242,7 +246,8 @@ def _build_recommendation(state: ResearchState) -> str:
     if not parts:
         return "Insufficient data for recommendation"
 
-    recommendation = " | ".join(parts)
+    # One line per signal, as a markdown list: the chat renders it, and a single pipe-joined line read as a log.
+    recommendation = "\n".join(f"- {part}" for part in parts)
 
     # Say what could not be checked.
     #
@@ -267,9 +272,9 @@ def _build_recommendation(state: ResearchState) -> str:
         "price_history": bool(state.price_history.get("trend") or state.price_history.get("is_good_deal")),
         "shipping": bool(state.shipping.get("shipping_options")),
     }
-    missing = [name for name, ok in contributed.items() if not ok]
+    missing = [_READABLE.get(name, name) for name, ok in contributed.items() if not ok]
     if missing:
-        recommendation += f" | (could not check: {', '.join(missing)})"
+        recommendation += f"\n- I could not check: {', '.join(missing)}"
 
     return recommendation
 

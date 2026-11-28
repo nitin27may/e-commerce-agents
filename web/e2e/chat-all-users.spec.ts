@@ -60,7 +60,7 @@ async function sendMessageAndWaitForResponse(page: Page, message: string): Promi
   // contain a keyword. The previous locator matched on /help|assist|.../ and returned
   // whichever tiny node won — routinely a single six-character word — so a
   // "response.length > 20" assertion failed against a perfectly good answer.
-  const rendered = page.locator('[class*="prose"]').last();
+  const rendered = page.getByTestId("assistant-text").last();
   await expect(rendered).toBeVisible({ timeout: 10000 });
   return (await rendered.textContent()) ?? "";
 }
@@ -81,8 +81,8 @@ for (const user of USERS) {
       // The LLM should respond with something about its capabilities
       expect(response.length).toBeGreaterThan(20);
 
-      // Should show "orchestrator" badge on the assistant message
-      await expect(page.getByText("orchestrator").first()).toBeVisible();
+      // The storefront chat names no agent to any role: internals live in the staff Lab (/lab).
+      await expect(page.getByTestId("assistant-text").last()).not.toContainText(/orchestrator|specialist/i);
     });
 
     test("conversation appears in sidebar after first message", async ({ page }) => {

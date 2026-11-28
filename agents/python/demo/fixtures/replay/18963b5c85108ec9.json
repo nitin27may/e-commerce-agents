@@ -18,35 +18,23 @@
     "tools": [
       {
         "function": {
-          "description": "Remote specialist review-sentiment accessed over A2A.",
-          "name": "handoff_to_review-sentiment",
-          "parameters": {
-            "properties": {},
-            "title": "handoff_to_review-sentiment_input",
-            "type": "object"
-          }
-        },
-        "type": "function"
-      },
-      {
-        "function": {
-          "description": "Remote specialist order-management accessed over A2A.",
-          "name": "handoff_to_order-management",
-          "parameters": {
-            "properties": {},
-            "title": "handoff_to_order-management_input",
-            "type": "object"
-          }
-        },
-        "type": "function"
-      },
-      {
-        "function": {
           "description": "Remote specialist inventory-fulfillment accessed over A2A.",
           "name": "handoff_to_inventory-fulfillment",
           "parameters": {
             "properties": {},
             "title": "handoff_to_inventory-fulfillment_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Remote specialist product-discovery accessed over A2A.",
+          "name": "handoff_to_product-discovery",
+          "parameters": {
+            "properties": {},
+            "title": "handoff_to_product-discovery_input",
             "type": "object"
           }
         },
@@ -66,11 +54,23 @@
       },
       {
         "function": {
-          "description": "Remote specialist product-discovery accessed over A2A.",
-          "name": "handoff_to_product-discovery",
+          "description": "Remote specialist order-management accessed over A2A.",
+          "name": "handoff_to_order-management",
           "parameters": {
             "properties": {},
-            "title": "handoff_to_product-discovery_input",
+            "title": "handoff_to_order-management_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Remote specialist review-sentiment accessed over A2A.",
+          "name": "handoff_to_review-sentiment",
+          "parameters": {
+            "properties": {},
+            "title": "handoff_to_review-sentiment_input",
             "type": "object"
           }
         },
@@ -79,7 +79,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-11-24T03:19:02.000000Z",
+    "created_at": "2026-11-28T03:48:09.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -88,7 +88,7 @@
           {
             "additional_properties": {},
             "arguments": "{}",
-            "call_id": "call_s8lJJohsEECdjAOzPtp5ZlOS",
+            "call_id": "call_lmayvVHq1VZSmDqGEiCow7t5",
             "hosted": false,
             "name": "handoff_to_order-management",
             "type": "function_call"
@@ -99,10 +99,10 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EnbLadrqV781CbSs2FatID6oiQRj2",
+    "response_id": "chatcmpl-Ep3hx2atI1DMqtoE7JukdAJGJX4BX",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 0,
+      "cache_read_input_token_count": 1792,
       "completion/accepted_prediction_tokens": 0,
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
@@ -110,7 +110,7 @@
       "input_token_count": 2058,
       "output_token_count": 13,
       "prompt/audio_tokens": 0,
-      "prompt/cached_tokens": 0,
+      "prompt/cached_tokens": 1792,
       "reasoning_output_token_count": 0,
       "total_token_count": 2071
     }

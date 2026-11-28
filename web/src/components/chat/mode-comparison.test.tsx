@@ -48,7 +48,12 @@ describe("ModeComparison", () => {
     const runButton = screen.getByRole("button", { name: /Run comparison/ });
     expect(runButton).toBeDisabled();
 
-    fireEvent.click(screen.getByText("Pre-Purchase Research"));
+    // Mode chips are toggle buttons, so the selection is visible to assistive tech (and to the media spec).
+    const toolChip = screen.getByRole("button", { name: "Tool Router", pressed: true });
+    const researchChip = screen.getByRole("button", { name: "Pre-Purchase Research", pressed: false });
+    fireEvent.click(researchChip);
+    expect(researchChip).toHaveAttribute("aria-pressed", "true");
+    expect(toolChip).toHaveAttribute("aria-pressed", "true");
     expect(runButton).toBeDisabled(); // still no prompt text
 
     fireEvent.change(screen.getByPlaceholderText(/headphones/), { target: { value: "worth it?" } });
@@ -155,8 +160,8 @@ describe("ModeComparison", () => {
       overall_sentiment: "positive",
       average_rating: 4.7,
       total_reviews: 15,
-      pros: ["Comfortable"],
-      cons: ["Expensive"],
+      pros: ["Comfortable for long flights"],
+      cons: ["Expensive for what it is"],
     };
     const result = {
       latency_ms: 10,
@@ -187,7 +192,7 @@ describe("ModeComparison", () => {
 
     await waitFor(() => expect(screen.getByText("Reviews are strong.")).toBeInTheDocument());
     expect(screen.getByText("from 15 reviews")).toBeInTheDocument();
-    expect(screen.getByText("Comfortable")).toBeInTheDocument();
+    expect(screen.getByText("Comfortable for long flights")).toBeInTheDocument();
     expect(screen.queryByText(/overall_sentiment/)).not.toBeInTheDocument();
     expect(screen.queryByText(/```/)).not.toBeInTheDocument();
     expect(screen.getByText("(no answer)")).toBeInTheDocument();

@@ -15,12 +15,12 @@ client `web/src/lib/api.ts`.
 
 <table>
 <tr>
-  <td><img src="images/shop-ai-assistant.png" alt="AI shopping assistant with product cards" width="400"/></td>
-  <td><img src="images/agent-timeline.png" alt="Live agent activity timeline" width="400"/></td>
+  <td><img src="images/flow-product-search.jpg" alt="Chat answering a product search with a product card" width="400"/></td>
+  <td><img src="images/agent-timeline.jpg" alt="The Lab's agent activity list for a tool-routed turn" width="400"/></td>
 </tr>
 <tr>
-  <td align="center"><em>AI shopping assistant — product cards from Product Discovery agent</em></td>
-  <td align="center"><em>Agent activity timeline — live orchestrator → specialist → tool trace</em></td>
+  <td align="center"><em>The storefront chat: answers as cards (<code>/chat</code>)</em></td>
+  <td align="center"><em>The staff Lab: every agent and tool call behind the same answer (<code>/lab</code>)</em></td>
 </tr>
 </table>
 
@@ -62,8 +62,9 @@ the orchestrator SSE stream `POST /api/chat/stream`. Frame types:
 - `event: metadata` + `data: {conversation_id, agents_involved}` — final.
 - `data: [DONE]` — terminator.
 
-`AgentTimeline` (`components/chat/agent-timeline.tsx`) renders the steps as a
-collapsible "Agent activity" disclosure (orchestrator → specialist → tool). Rich
+In the staff Lab (`/lab`), `AgentTimeline` (`components/chat/agent-timeline.tsx`) renders the steps
+as a collapsible "Agent activity" disclosure (orchestrator → specialist → tool). The storefront chat
+(`/chat`) only turns them into a plain status line ("Checking stock and delivery..."). Rich
 assistant content (product/order/checkout cards) is parsed by
 `components/chat/rich-message.tsx`.
 
@@ -96,12 +97,18 @@ sequenceDiagram
 
 ## Orchestration modes, live graph and runs
 
-In the chat composer the user picks how the orchestrator should handle the next message: one of
+**Who sees what.** The storefront chat (`/chat`) shows every role answers, cards and a plain status
+line: no agent names, tool steps, graphs, grounding reports, mode switcher or compare dialog. The
+same component with `devView` on is the staff Lab (`/lab`, support and admin only), where all of the
+following are visible. `/runs` and `/agents` are staff pages too (`components/staff-only.tsx`).
+
+In the Lab composer a developer picks how the orchestrator should handle the next message: one of
 its five orchestration modes. While a workflow mode runs, a diagram of that mode's graph lights up
 node by node. A compare dialog sends one prompt through several modes and shows the answers side by
 side, and the `/runs` page lists past runs and lets staff approve or reject a paused one.
 
-The chat page is `app/(app)/chat/page.tsx`. The pieces:
+The chat is `components/chat/chat-view.tsx`, mounted by `app/(app)/chat/page.tsx` and, with
+`devView`, by `app/(app)/lab/page.tsx`. The pieces:
 
 - **Mode switcher** (`components/chat/mode-switcher.tsx`). A composer control fed by
   `GET /api/orchestration/modes`. The selection travels as the `mode` option of

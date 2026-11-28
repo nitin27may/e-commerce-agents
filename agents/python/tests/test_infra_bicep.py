@@ -1002,6 +1002,10 @@ def test_build_from_source_dry_run_prints_a_remote_build_per_image() -> None:
         f"{name}:src-abc1234" for name, row in _manifest().items() if row["used_by"] in ("python", "both")
     }
     assert all("--platform linux/amd64" in line for line in builds)
+    # azure-cli resolves --file from the working directory (the repository root), not from the build context.
+    for line in builds:
+        dockerfile = line.split("--file ")[1].split()[0]
+        assert (REPO_ROOT / dockerfile).is_file(), f"az acr build --file {dockerfile}: no such file from the repo root"
     # The registry is filled between two provisions: the apps cannot start from an image that is not there yet.
     steps = [line for line in out.splitlines() if "azd provision" in line or "az acr build" in line]
     assert steps[0].endswith("azd provision --environment t1 --no-prompt")

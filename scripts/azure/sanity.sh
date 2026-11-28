@@ -28,7 +28,7 @@
 # the frontend URL, Key Vault, account and deployment are discovered from the resource group.
 #
 # Exit 0 only when no check FAILed. Scale to zero makes the first calls slow: each call waits and retries for up to
-# SANITY_WAIT_SECONDS (default 300). Not run against a real subscription yet.
+# SANITY_WAIT_SECONDS (default 300). Run against a real subscription as part of scripts/azure-up.sh (small profile).
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.." || exit 1
 # shellcheck source=scripts/azure/lib/common.sh

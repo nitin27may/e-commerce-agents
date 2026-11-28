@@ -17,7 +17,7 @@ const STATE: Record<AutonomyState, { label: string; tone: SemanticTone }> = {
   expired: { label: "Expired, nothing done", tone: "neutral" },
   failed: { label: "Approved but not done", tone: "destructive" },
   reversed: { label: "Reversed", tone: "neutral" },
-  no_action: { label: "Nothing to do", tone: "neutral" },
+  no_action: { label: "No action needed", tone: "neutral" },
 };
 
 /** A risk review is "cleared" or "upheld" by a person, not "done" by the system, so it reads differently. */
@@ -97,6 +97,28 @@ export function reasonText(code: string): string {
   return REASON[code] ?? code;
 }
 
+/**
+ * A server calendar day ("2026-11-16") or month ("2026-11") in the app's date style. Budgets reset on UTC
+ * boundaries, so the day is read in UTC; a local reading would show the previous day west of Greenwich.
+ */
+export function formatBudgetPeriod(value: string | null | undefined): string {
+  if (!value) return "";
+  const isMonth = /^\d{4}-\d{2}$/.test(value);
+  const date = new Date(isMonth ? `${value}-01T00:00:00Z` : `${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(
+    "en-US",
+    isMonth
+      ? { year: "numeric", month: "long", timeZone: "UTC" }
+      : { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" },
+  );
+}
+
+/** Sentence case for a label built from lower-case parts. */
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 /** A decimal string from the server as a display amount; "-" when absent or not a number. */
 export function money(value: string | null | undefined): string {
   if (value == null || value.trim() === "") return "-";
@@ -128,7 +150,7 @@ export function DecisionCard({
     isRisk || (decision.amount == null && decision.applied_amount == null)
       ? ""
       : ` ${money(decision.applied_amount ?? decision.amount)}`;
-  const label = `${actionName}${amountPart} for ${decision.customer_email ?? "unknown customer"}`;
+  const label = capitalize(`${actionName}${amountPart} for ${decision.customer_email ?? "unknown customer"}`);
   const event = decision.input.event;
   const productName = event?.line?.product_name ?? event?.product_name;
   const risk = event?.risk;
@@ -207,7 +229,7 @@ export function DecisionCard({
         )}
         <p className="text-muted-foreground">
           {drew
-            ? `Drew ${money(drew.amount)} from the ${decision.budget.budget_key?.replaceAll("_", " ")} budget for ${decision.budget.day} (UTC).`
+            ? `Drew ${money(drew.amount)} from the ${decision.budget.budget_key?.replaceAll("_", " ")} budget for ${formatBudgetPeriod(decision.budget.day)}.`
             : tripped.length > 0
               ? "Drew nothing: a limit was reached, so a person decides."
               : "Drew nothing from the budget."}

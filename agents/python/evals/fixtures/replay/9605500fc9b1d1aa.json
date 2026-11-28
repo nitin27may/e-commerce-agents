@@ -418,7 +418,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-11-24T19:02:00.000000Z",
+    "created_at": "2026-11-28T09:27:03.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -427,7 +427,7 @@
           {
             "additional_properties": {},
             "arguments": "{\"query\":\"Sony WH-1000XM5\",\"limit\":1}",
-            "call_id": "call_ERbfDO2CeQ63KLyxe4SaHwsa",
+            "call_id": "call_1PFZsWscDNjZS8YNRX2bwOQh",
             "hosted": false,
             "name": "search_products",
             "type": "function_call"
@@ -438,7 +438,7 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-Enq48QBB0yGLDuLGtOwMyagW7dwUL",
+    "response_id": "chatcmpl-Ep8zvaHDDFimx5NLap6KoVm03yHW9",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 3968,
@@ -446,12 +446,12 @@
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
       "completion/rejected_prediction_tokens": 0,
-      "input_token_count": 4093,
+      "input_token_count": 4114,
       "output_token_count": 24,
       "prompt/audio_tokens": 0,
       "prompt/cached_tokens": 3968,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4117
+      "total_token_count": 4138
     }
   }
 }

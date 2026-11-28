@@ -157,7 +157,7 @@ describe("ReturnInspectionsPage", () => {
 
     render(<ReturnInspectionsPage />);
 
-    expect(screen.getByText("Staff only")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Access Denied" })).toBeInTheDocument();
     expect(list).not.toHaveBeenCalled();
   });
 

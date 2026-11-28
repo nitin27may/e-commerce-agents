@@ -5,8 +5,9 @@ import { api, type RunEntry } from "@/lib/api";
 
 // Only staff may approve (#92), so the buttons are role-gated; each test sets the role.
 const auth = vi.hoisted(() => ({ isStaff: true, email: "reviewer@example.com" }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }));
 vi.mock("@/lib/auth-context", () => ({
-  useAuth: () => ({ isStaff: auth.isStaff, user: { email: auth.email, name: "U", role: "x" } }),
+  useAuth: () => ({ isStaff: auth.isStaff, isLoading: false, user: { email: auth.email, name: "U", role: "x" } }),
 }));
 
 const PENDING_RUN: RunEntry = {
@@ -85,31 +86,12 @@ describe("RunsPage — checkpoint resume", () => {
     expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
   });
 
-  it("shows a customer 'Awaiting staff review' instead of Approve/Reject", async () => {
+  it("is a staff page: a customer gets Access Denied and no runs are fetched", async () => {
     auth.isStaff = false;
-    vi.spyOn(api, "getRuns").mockResolvedValue({ entries: [PENDING_RUN], total: 1, limit: 20, offset: 0 });
-    vi.spyOn(api, "getRunCheckpoints").mockResolvedValue({
-      run_id: "run-1",
-      checkpoints: [],
-      hitl_request: {
-        id: "hitl-1",
-        status: "pending",
-        payload: { order_id: "order-abc" },
-        response: null,
-        created_at: new Date().toISOString(),
-        responded_at: null,
-      },
-    });
-    const resume = vi.spyOn(api, "resumeRun");
-
+    const getRuns = vi.spyOn(api, "getRuns");
     render(<RunsPage />);
-    await waitFor(() => expect(screen.getByText("return order abc")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("return order abc"));
-
-    await waitFor(() => expect(screen.getByText("Awaiting staff review")).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();
-    expect(resume).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Access Denied" })).toBeInTheDocument();
+    expect(getRuns).not.toHaveBeenCalled();
   });
 
   it("approving calls resumeRun and refreshes to show the resolved state", async () => {

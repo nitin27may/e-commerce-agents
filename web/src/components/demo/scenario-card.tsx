@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { cn } from "@/lib/utils";
 import type { Scenario } from "@/lib/scenarios";
 
 interface ScenarioCardProps {
@@ -50,19 +49,7 @@ export function ScenarioCard({ scenario, href, compact = false }: ScenarioCardPr
         &ldquo;{scenario.prompt}&rdquo;
       </p>
 
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap gap-1">
-          {scenario.agents.map((a) => (
-            <span
-              key={a}
-              className={cn(
-                "rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground",
-              )}
-            >
-              {a}
-            </span>
-          ))}
-        </div>
+      <div className="mt-3 flex items-center justify-end gap-2">
         <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors group-hover/sc:bg-primary group-hover/sc:text-primary-foreground">
           Try it <ArrowRight className="size-3" />
         </span>

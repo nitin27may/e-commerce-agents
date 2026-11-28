@@ -1,4 +1,6 @@
-import type { CardKind } from "./chat-schemas";
+import { CARD_REGISTRY, cardDedupeKey, scanCardFences, type CardKind, type Suggestion } from "./chat-schemas";
+
+export type { Suggestion };
 
 /**
  * Follow-up chips derived from the assistant's last message.
@@ -17,71 +19,30 @@ import type { CardKind } from "./chat-schemas";
  * already has.
  */
 
-export interface Suggestion {
-  label: string;
-  prompt: string;
-}
-
-/** Chips per card kind. Ordered most-likely-first; only the first three show. */
-const BY_CARD: Partial<Record<CardKind, Suggestion[]>> = {
-  product: [
-    { label: "Check stock", prompt: "Is this in stock?" },
-    { label: "Show reviews", prompt: "What do the reviews say about this?" },
-    { label: "Find similar", prompt: "Show me similar products" },
-  ],
-  order: [
-    { label: "Track this order", prompt: "Where is this order right now?" },
-    { label: "Start a return", prompt: "I want to return this order" },
-    { label: "Order details", prompt: "Show me the full details of this order" },
-  ],
-  pricing: [
-    { label: "Any better deals?", prompt: "Are there any better deals on this?" },
-    { label: "Price history", prompt: "What has the price history been?" },
-    { label: "Apply a coupon", prompt: "Do I have any coupons I can use?" },
-  ],
-  inventory: [
-    { label: "Estimate delivery", prompt: "How fast can this be delivered to me?" },
-    { label: "Other warehouses", prompt: "Which other warehouses have this?" },
-    { label: "Restock date", prompt: "When will this be back in stock?" },
-  ],
-  sentiment: [
-    { label: "Show negative reviews", prompt: "What do the negative reviews say?" },
-    { label: "Summarise the pros", prompt: "What do reviewers like most about this?" },
-    { label: "Compare sentiment", prompt: "How does this compare to similar products?" },
-  ],
-  return: [
-    { label: "Return status", prompt: "What is the status of my return?" },
-    { label: "Refund timing", prompt: "When will I get my refund?" },
-    { label: "Replacement options", prompt: "What can I replace this with?" },
-  ],
-  checkout: [
-    { label: "Apply a coupon", prompt: "Apply my best available coupon" },
-    { label: "Shipping options", prompt: "What are my shipping options?" },
-    { label: "Place the order", prompt: "Go ahead and place the order" },
-  ],
-};
-
-/** More than one product changes the useful follow-up from "tell me about it" to "compare". */
-const MULTI_PRODUCT: Suggestion[] = [
-  { label: "Compare these", prompt: "Compare these products for me" },
-  { label: "Check stock", prompt: "Which of these are in stock?" },
-  { label: "Any deals?", prompt: "Are any of these on offer?" },
-];
-
-const FENCE = /```(product|products|order|checkout|return|sentiment|inventory|pricing)\s*\n/g;
-
 /**
- * Card kinds present in a message, in order of appearance, with duplicates.
+ * Card kinds in a message, in order of appearance, with duplicates.
  *
- * Counts rather than de-duplicates because "two products" and "one product"
- * warrant different follow-ups.
+ * Read through the same scanner and validation the renderer uses, so a chip
+ * never follows a card that was not shown: a fence without a newline after its
+ * tag counts, an empty or invalid one does not. A two-product `products` fence
+ * is one `comparison`.
+ *
+ * Repeats of the same card (same dedupe key) count once, as they render once;
+ * distinct cards of one kind each count, because "two products" and "one
+ * product" warrant different follow-ups.
  */
-export function cardKindsIn(text: string): string[] {
-  const kinds: string[] = [];
-  for (const match of text.matchAll(FENCE)) {
-    kinds.push(match[1]);
-  }
-  return kinds;
+export function cardKindsIn(text: string): CardKind[] {
+  const seen = new Set<string>();
+  return scanCardFences(text)
+    .flatMap((fence) => fence.cards)
+    .filter((card) => {
+      const key = cardDedupeKey(card);
+      if (key === null) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((card) => card.kind);
 }
 
 const MAX_LABEL = 42;
@@ -162,19 +123,13 @@ export function deriveSuggestions(
   // ── Tier 1: the typed payload ──────────────────────────────────────────
   const kinds = cardKindsIn(lastAssistantMessage);
   if (kinds.length > 0) {
-    // A `products` fence is an array, so it is multi by construction; two or
-    // more separate `product` fences count the same way.
-    const productCount = kinds.filter((k) => k === "product").length;
-    const isMultiProduct = kinds.includes("products") || productCount > 1;
-
-    if (isMultiProduct) return take3(MULTI_PRODUCT);
+    // Several products, or a comparison, call for "compare" chips.
+    const isMultiProduct = kinds.includes("comparison") || kinds.filter((k) => k === "product").length > 1;
+    if (isMultiProduct) return take3([...CARD_REGISTRY.comparison.suggestions]);
 
     // Last card wins: it is the one nearest the composer and the one the user
     // is most likely still looking at.
-    const last = kinds[kinds.length - 1];
-    const key = (last === "products" ? "product" : last) as CardKind;
-    const mapped = BY_CARD[key];
-    if (mapped) return take3(mapped);
+    return take3([...CARD_REGISTRY[kinds[kinds.length - 1]].suggestions]);
   }
 
   // ── Tier 2: the closing question ───────────────────────────────────────

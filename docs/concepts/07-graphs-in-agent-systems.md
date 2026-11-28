@@ -76,7 +76,7 @@ workflow — no hidden branching, nothing else going on.
 
 This graph isn't just internal structure — it's rendered live. `PrePurchaseMode.graph_mermaid()`
 ([`orchestrator/modes/workflow_mode.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/modes/workflow_mode.py)) returns a Mermaid string built from the *same*
-executor ids used at runtime, and the web UI ([`web/src/components/chat/orchestration-graph.tsx`](https://github.com/nitin27may/e-commerce-agents/blob/main/web/src/components/chat/orchestration-graph.tsx))
+executor ids used at runtime, and the staff Lab at `/lab` ([`web/src/components/chat/orchestration-graph.tsx`](https://github.com/nitin27may/e-commerce-agents/blob/main/web/src/components/chat/orchestration-graph.tsx))
 fetches that string and re-applies the house palette client-side to animate nodes
 from idle → active → done as real `event: node` SSE frames arrive during a run. The id convention
 that makes this correlation possible — dashes in an executor id become underscores in the Mermaid

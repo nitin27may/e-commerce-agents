@@ -118,8 +118,9 @@ export function ModeComparison({ initialPrompt = "" }: ModeComparisonProps) {
             {modes.map((mode) => (
               <Badge
                 key={mode.name}
+                render={<button type="button" aria-pressed={selected.includes(mode.name)} />}
                 variant={selected.includes(mode.name) ? "default" : "outline"}
-                className="cursor-pointer select-none"
+                className="cursor-pointer select-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => toggleMode(mode.name)}
               >
                 {mode.label}

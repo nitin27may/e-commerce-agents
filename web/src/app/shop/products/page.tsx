@@ -8,6 +8,9 @@ import { useLoadEffect } from "@/lib/use-load-effect";
 import { ProductGridCard, type ShopProduct } from "@/components/shop/product-grid-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { SearchX } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/empty-state";
 
 function Catalog() {
   const params = useSearchParams();
@@ -78,9 +81,11 @@ function Catalog() {
           ))}
         </div>
       ) : products.length === 0 ? (
-        <div className="rounded-xl border border-dashed py-16 text-center text-sm text-muted-foreground">
-          No products found. <Link href="/shop/products" className="text-primary hover:underline">Clear filters</Link>
-        </div>
+        <EmptyState icon={SearchX} title="No products found" description="Try another search or category.">
+          <Button render={<Link href="/shop/products" />} variant="outline" size="sm">
+            Clear filters
+          </Button>
+        </EmptyState>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {products.map((p) => (
