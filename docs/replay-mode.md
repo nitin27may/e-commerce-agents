@@ -60,8 +60,8 @@ tool schema, so a `.env` file or an exported variable cannot change what a recor
 It is Python only and cannot be combined with `--dotnet`.
 
 The recordings are in `agents/python/demo/fixtures/replay/` and `agents/python/demo/fixtures/manifest.json`
-says which prompt each one answers. Images built before they were added (the released 1.4.0 images)
-have none, so there every chat prompt is reported as not recorded; browsing, search, the cart and
+says which prompt each one answers. The released images carry them from 1.5.0; the 1.4.0 images have none, so
+there every chat prompt is reported as not recorded; browsing, search, the cart and
 checkout call no model and work normally. See the [demo guide](demo-guide.md#no-key-mode).
 
 To re-record them, run the five specialists and the orchestrator on free ports with the overlay's

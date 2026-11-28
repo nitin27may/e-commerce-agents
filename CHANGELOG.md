@@ -14,10 +14,14 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
-Planned as 1.5.0. Since 1.4.0 the project gains a customer confirmation step before gated actions, more event
-autonomy, an opt-in merchant-ops specialist, a key-free hosted preview, a much larger eval harness with live baselines,
-and twelve run profiles. Migrations 0015 to 0020 are new (see "Database"). Everything that has not run against its real
-target is listed under "Known limits".
+## [1.5.0] - 2026-11-28
+
+Since 1.4.0 the project gains a customer confirmation step before gated actions, more event autonomy, an opt-in
+merchant-ops specialist, a key-free hosted preview, a much larger eval harness with live baselines, and twelve run
+profiles. The storefront chat now shows no agent internals to any role (they moved to a staff-only Lab), the
+one-command Azure deployment has run from a clean subscription, and the images carry the recorded answers, so
+`./scripts/dev.sh --demo --no-key` answers its suggested prompts with no model key. Migrations 0015 to 0020 are new
+(see "Database"). Everything that has not run against its real target is listed under "Known limits".
 
 ### Added
 
@@ -147,7 +151,7 @@ monthly budgets; 0019 `awaiting_manager` PO review for merchant proposals; 0020 
 ### Known limits
 
 - **The small profile was deployed from a clean subscription with one command, and tested.** `scripts/azure-up.sh` needs no arguments: every value (environment name, region, profile, image tag, model, accounts) has a default and a flag or `ECA_*` override, it shows numbered progress, and it ends by printing the URL, the documented demo accounts and what to try. A clean run provisioned in 7m32s and printed the banner at 10m30s; the smoke test (real model answers with product cards, a return paused, approved and executed) and the database, chat-turn and direct bearer-token model checks passed, and the teardown was verified clean. The apps reach the model with their managed identity; no model key exists. Bugs the real runs found are fixed and listed in [azure-deployment-stages.md](docs/azure-deployment-stages.md): a mistyped Key Vault role id (now pinned by a test), secrets generated too late for azd, deployments that must be named after their models for the cost guard, a region picker defeated by `pipefail`, and a model check that needs a retry window on a new account. The `demo` and `reference` profiles, the gateway and the portal button remain verified offline only.
-- **The Azure deployment has never run against a real subscription.** The Bicep, the azd hooks, the optional Foundry, gateway, per-app identity and reference-profile modules and the scripts build, lint and pass offline tests. The APIM tier that supports the token policies is unverified. The first real deploy is a separate step with its own close conditions (`docs/azure-deployment.md`); until it passes, #89, #91 and the deploy chapter of #100 stay open. The Postgres admin password remains, because Entra authentication for the database needs code on both stacks.
+- **Only the `small` profile has run against a real subscription.** The `demo` and `reference` profiles and the optional gateway, per-app identity and reference modules build, lint and pass offline tests only, and the APIM tier that supports the token policies is unverified. The deploy chapter of #100 is still to be written. The Postgres admin password remains, because Entra authentication for the database needs code on both stacks.
 - **Azure managed identity (`AZURE_OPENAI_AUTH=identity`) was tested against a fake credential only.** The default stays `key`.
 - **The Anthropic provider is stub-tested on both stacks and has never made a live call.** Azure-hosted Claude answers on the Anthropic Messages route and has no capability row; Gemini and OpenAI direct have no stored live results either (#300).
 - **A real carrier feed is external.** Event autonomy and the return lifecycle are driven by the admin simulator only (#299, #95).
