@@ -44,7 +44,7 @@ const PROMPTS = {
   addToCart: "Add the Sony WH-1000XM5 to my cart.",
   latestOrder: "Where's my latest order?",
   returnStart: "I want to return my last order",
-  returnReason: "The cooler stopped working properly. Please refund it to my original payment method.",
+  returnReason: "None of it suits me after all. Please return the whole order and refund it to my original payment method.",
   returnConfirm: "Yes, please go ahead.",
   dealAndStock: "Is the Sony WH-1000XM5 a good deal right now, and is it in stock?",
   prePurchase: "I am thinking of buying the Sony WH-1000XM5. Is it a good time to buy?",
@@ -299,7 +299,6 @@ test("stills: every documented screen, on the current UI", async ({ browser }) =
   await expect(dialog.getByTestId(/^usage-/).first()).toBeVisible({ timeout: 60_000 });
   await beat(g.page, 1_200);
   await still(g.page, "compare-dialog");
-  await still(g.page, "mode-compare");
   await g.context.close();
 
   // A seller.
