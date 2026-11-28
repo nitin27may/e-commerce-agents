@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Replay a timestamped log (one "<epoch seconds><TAB><line>" per line) at a speed-up, for terminal recordings of
-# commands too slow to film in real time (scripts/demo/tapes/azure-up.tape). Gaps are divided by SPEED and capped
+# commands too slow to film in real time (scripts/demo/tapes/azure.tape). Gaps are divided by SPEED and capped
 # at MAX_GAP seconds, so a ten-minute run plays in well under a minute.
 #
 #   scripts/demo/replay-log.sh azure-up.log [SPEED=40] [MAX_GAP=1.2]

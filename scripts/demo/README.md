@@ -17,7 +17,11 @@ Needs `ffmpeg` and `gifski`, plus `vhs` for terminal clips (`brew install ffmpeg
 | `web/e2e/media/screencast.ts` | Frame capture, the visible pointer and click ripple, gliding clicks |
 | `scripts/demo/encode.sh` | Frames to GIF (gifski) and MP4 (H.264) |
 | `scripts/demo/tapes/*.tape` | Terminal clips (vhs) |
-| `scripts/demo/eval-env.sh` | The keyless eval environment the evals tape sources off camera |
+| `scripts/demo/eval-env.sh` | The no-key eval environment the evals tape sources off camera |
+| `scripts/demo/clips.json` | Every clip: its source, the docs that embed it, its caption and the agents behind it |
+| `scripts/demo/redact.sh` | Masks GUIDs, non-demo emails, IP addresses, Azure hostnames and `REDACT_WORDS` in a stream |
+| `scripts/demo/replay-log.sh` | Replays a saved, timestamped log at a chosen speed (the Azure tape uses it) |
+| `scripts/demo/check-frames.sh` | OCRs a clip's frames (tesseract) and fails on anything the redaction should have masked |
 
 ## Settings, and why
 
@@ -28,7 +32,7 @@ Needs `ffmpeg` and `gifski`, plus `vhs` for terminal clips (`brew install ffmpeg
 | GIF | 1280 px wide, 13 fps, gifski `--quality 95 --motion-quality 100 --lossy-quality 100` | GitHub renders GIFs inline in a README and does not play video files committed to the repo. A downscale from 2x keeps text crisp. Lower motion or lossy quality leaves ghosting in flat backgrounds. Budget: 8 MB per clip |
 | MP4 | 2560 px wide, H.264 high profile, CRF 18, 30 fps, `+faststart` | For articles, the docs site and release notes. Not committed (`docs/media/` is ignored): every re-record would add megabytes to the history. Attach it to a release, or upload it to a GitHub issue or PR for a `user-attachments` URL that a README can play inline |
 | Pointer | Drawn arrow with a click ripple; moves glide | Headless Chromium draws no cursor, and without one a viewer cannot tell what was clicked |
-| Pacing | Typing at about 45 characters a second; SSE frames spaced 450 to 700 ms; a pause after each answer long enough to read it once | Workflow modes finish in 100 to 300 ms on the replay stack, which would flash past |
+| Pacing | Typing at about 45 characters a second; SSE frames spaced 500 to 600 ms in the workflow clips; a pause after each answer long enough to read it once | Workflow modes finish in 100 to 300 ms on the replay stack, which would flash past |
 | Terminal | vhs, 1280 x 800, Menlo 15, GitHub Dark | Readable at README width |
 
 ## Azure clip

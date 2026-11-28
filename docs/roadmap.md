@@ -22,7 +22,7 @@ run, a model key this repository does not have, or an external system.
 | # | Item | Why it is here |
 |---|---|---|
 | 1 | [First real Azure deployment](#first-real-azure-deployment) | **Done.** `scripts/azure-up.sh` deployed and tested from a clean subscription (#263); what is left is deployed evals and the course chapter |
-| 2 | [The .NET 11 move](#the-net-11-move) | The .NET 11 move is prepared as draft PR #331. A separate change that needs no key and no Azure |
+| 2 | [The .NET 11 move](#the-net-11-move) | **Done.** The .NET stack targets .NET 11 (#331) |
 | 3 | [Model-calling parity run](#model-calling-parity-run) | The keyless parity gate runs in CI; a comparison that calls a model does not. Also the .NET live baselines |
 | 4 | [Foundry features that need an Azure credential](#foundry-features-that-need-an-azure-credential) | Foundry evaluators logging to a project, the safety evaluator, hosted agents. They wait on item 1 |
 | 5 | [Publish the Azure reference](#publish-the-azure-reference) | Topologies with measured costs. The difference between them is the content |
@@ -45,21 +45,21 @@ model, a return approval and a database check. What the real runs found and fixe
 `reference` profiles and the optional API Management gateway have not had a real run yet.
 
 Cost and teardown are part of the deliverable: a reader who cannot cheaply undo a deployment will
-not try it. The run has a 10 USD cap and a key-free model path. It is done when four things hold:
+not try it. The run has a 10 USD budget alert (it notifies; it does not stop spending) and a key-free model path. All four
+conditions it was held to are met:
 
 - The stack comes up and a sanity script passes, with the model reached through a bearer token.
 - No model key exists anywhere in the deployment.
 - Teardown leaves nothing behind, checked by a script.
-- Spend stays under the cap, and the measured figure is recorded.
+- Spend stays under the budget, and the measured figure is recorded.
 
 The Postgres admin password stays, because Entra authentication for the database needs code on both stacks.
 Deployed evals, the `azure.yml` workflow end to end and the deployment chapter of the course follow once the run passes.
 
 ### The .NET 11 move
 
-The .NET stack targets `net11.0` on draft PR #331 (target framework, `global.json`, Dockerfile base images, the SDK in CI, the
-runtime-versioned packages). It is done when every .NET test and both mixed-stack boots pass on that PR. It is its own change,
-separate from the Azure run: merge it after the Azure deployment, and roll back with a single revert.
+Done in #331: the target framework, `global.json`, Dockerfile base images, the SDK in CI and the runtime-versioned
+packages moved together, and it rolls back with a single revert.
 
 ### Model-calling parity run
 

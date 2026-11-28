@@ -65,7 +65,7 @@
     {
       "id": "research",
       "title": "Should I buy now?",
-      "caption": "A fixed workflow asks four specialists at once (reviews, stock, price history, shipping) and merges the results into one answer. It calls no model.",
+      "caption": "A fixed workflow checks reviews, stock and price history at once, then shipping, and merges the results into one answer. It calls no model. The tour chip is pinned to this workflow; a typed question is routed by the orchestrator instead.",
       "agents": [
         "pre-purchase workflow",
         "review-sentiment",

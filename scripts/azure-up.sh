@@ -77,7 +77,7 @@ while [ $# -gt 0 ]; do
         --llm-base-url) LLM_BASE_URL="$2"; shift 2 ;;
         --llm-model) LLM_MODEL="$2"; shift 2 ;;
         --dry-run) AZURE_DRY_RUN=1; shift ;;
-        -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,29s/^# \{0,1\}//p' "$0"; exit 0 ;;
         *) die "unknown argument: $1" ;;
     esac
 done

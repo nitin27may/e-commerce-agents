@@ -3,8 +3,10 @@
 #   1. Deploy, saving a redacted, timestamped log (scripts/demo/README.md, "Azure clip"):
 #        scripts/azure-up.sh --env eca-demo ... 2>&1 | scripts/demo/redact.sh \
 #          | perl -MTime::HiRes=time -ne 'printf "%.3f\t%s", time, $_' > azure-up.log
-#   2. AZURE_UP_LOG=azure-up.log REDACT_WORDS="<subscription name>,<your name>" vhs scripts/demo/tapes/azure.tape
-#   3. scripts/demo/check-frames.sh docs/images/azure.gif, then tear down: scripts/azure-down.sh --env eca-demo
+#   2. While it is up, save the two listings through the same filter (the queries are below) into resources.txt
+#      and apps.txt, then tear down: scripts/azure-down.sh --env eca-demo
+#   3. AZURE_UP_LOG=azure-up.log AZ_RESOURCES=resources.txt AZ_APPS=apps.txt scripts/record-media.sh azure
+#   4. REDACT_WORDS="<subscription name>,<your name>" scripts/demo/check-frames.sh docs/images/azure.gif
 #
 # Everything replays from the run's records: the deploy log at 40x (the clip says so), and the two listings from
 # their saved output (AZ_RESOURCES, AZ_APPS: the redacted text `az resource list` and `az containerapp list` printed),

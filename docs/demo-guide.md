@@ -24,9 +24,9 @@ again. The stack stays up either way.
 Sign in as `tour@example.com` / `tour123`: a dedicated account whose orders the tour depends on, with
 a delivered order over $500 for the return flow. **Reset demo** in the chat puts it back after a run.
 `alice.johnson@gmail.com` / `customer123` also has recordings, for the scenarios listed under Demo Scenarios
-below (1 to 8, the handoff and pre-purchase prompts of 9, and the Allbirds prompts the demo clip uses). It also has
-the prompts the Playwright specs send (the greeting for five accounts, the generative-UI, shopping, follow-up and
-grounding prompts); the key-free Playwright run is `E2E_NO_KEY=1 pnpm exec playwright test`, and it reports the
+below (1 to 8, the handoff and pre-purchase prompts of 9, and a short Allbirds conversation), for the README clips,
+and for the prompts the Playwright specs send (the greeting for five accounts, the generative-UI, shopping, follow-up
+and grounding prompts); the key-free Playwright run is `E2E_NO_KEY=1 pnpm exec playwright test`, and it reports the
 tests that send an unrecorded prompt as skipped. Other accounts and reworded prompts miss.
 
 The recordings are `agents/python/demo/fixtures/replay/`, and `agents/python/demo/fixtures/manifest.json` says which
@@ -54,8 +54,10 @@ Pre-seeded accounts for testing different roles. These credentials belong to the
 | `seller2.demo@gmail.com` | seller123 | Seller | Bronze |
 | `alice.johnson@gmail.com` | customer123 | Customer | Gold |
 | `bob.smith@gmail.com` | customer123 | Customer | Silver |
+| `power.demo@gmail.com` | power123 | Power user (a customer with access to every agent) | Gold |
+| `tour@example.com` | tour123 | Customer, for the no-key tour (reset with **Reset demo**) | Silver |
 
-`support` is a staff role: it reviews approvals that policy routes to support (`admin` acts as manager and can do everything support can). `power.demo@gmail.com` / `power123` is a `power_user` (a customer variant with access to every agent).
+`support` is a staff role: it reviews approvals that policy routes to support (`admin` acts as manager and can do everything support can).
 
 ---
 
@@ -76,7 +78,7 @@ Pre-seeded accounts for testing different roles. These credentials belong to the
 
 Try these in the chat after logging in:
 
-1. **Product Search**: "Find me wireless headphones under $300 with good noise cancellation"
+1. **Product Search**: "Find me noise-cancelling wireless headphones under $300"
 2. **Comparison**: "Compare the Sony WH-1000XM5 with AirPods Max"
 3. **Order Tracking**: "Where's my latest order?"
 4. **Return Flow**: "I want to return my last order"
@@ -92,7 +94,7 @@ so that account gets its coupons back; other accounts keep theirs used until the
 
 ### See how it works: the Lab
 
-The storefront chat shows every role answers and cards, never the machinery. Staff, and developers following the
+For every role, the storefront chat shows answers and cards, never the machinery. Staff, and developers following the
 course, get the same chat with everything shown at **Lab** (`/lab`): sign in as `admin.demo@gmail.com` /
 `admin123` or `support.demo@gmail.com` / `support123`.
 
@@ -101,7 +103,7 @@ course, get the same chat with everything shown at **Lab** (`/lab`): sign in as 
    is drawn with the answer and lights up each node as it runs. Under every answer the Lab also lists the agents
    that took part, each tool call with its timing, and the grounding report.
 
-    <img src="images/orchestration-graph-live.jpg" alt="The Lab in Pre-Purchase Research mode: the fan-out graph drawn under the question, with the fan-out node finished and the four branches running" width="820"/>
+    <img src="images/orchestration-graph-live.jpg" alt="The Lab in Pre-Purchase Research mode: the fan-out graph drawn under the question, with the fan-out node finished and the three branches running" width="820"/>
 
     *The graph mid-run. The workflow modes call no model and finish in milliseconds, so the recording spaces out
     the stream's frames (`web/e2e/demo-media.spec.ts`); with a live model the pacing is its latency.*
@@ -114,6 +116,9 @@ course, get the same chat with everything shown at **Lab** (`/lab`): sign in as 
     no recording matches it; with a key, all five answer.
 
     <img src="images/compare-dialog.jpg" alt="The Lab's Compare dialog on the no-key stack: pre-purchase research and return-and-replace side by side, each card showing its answer, latency, steps and the graph it took" width="820"/>
+
+### A return that needs a person
+
 11. **Approve a paused return.** Sign in as `tour@example.com` / `tour123`, the account seeded with a delivered
     order over the $500 approval threshold, and click **Return my Dyson (needs approval)**. The run pauses at the
     policy gate, nothing is created, and the chat shows "Awaiting staff review".
@@ -165,7 +170,7 @@ manager approves it in the inbox; her order now shows the refund and a label to 
 
 <img src="images/research.gif" alt="A pre-purchase question answered with reviews, stock, price trend and shipping in one list" width="820"/>
 
-**The Lab.** The same chat with its machinery shown, then the five modes compared.
+**The Lab.** The same chat with its machinery shown, then two modes compared.
 
 <img src="images/lab.gif" alt="The Lab: agent activity for a tool-routed turn, the pre-purchase graph lighting up, and the Compare dialog" width="820"/>
 
@@ -201,8 +206,6 @@ kind of data an agent returns, from one registry (`web/src/lib/chat-schemas.ts`)
 <tr><td align="center"><em>Track an order: items, totals, carrier, tracking number and address</em></td></tr>
 <tr><td><img src="images/flow-review-sentiment.jpg" alt="Chat: review sentiment as a card with a rating distribution and a trend" width="820"/></td></tr>
 <tr><td align="center"><em>What buyers say: the rating distribution and how it moved over time</em></td></tr>
-<tr><td><img src="images/flow-refund.jpg" alt="Chat: a return paused for staff review" width="820"/></td></tr>
-<tr><td align="center"><em>A return over the approval threshold waits for a person; nothing changes until then</em></td></tr>
 <tr><td><img src="images/flow-view-cart.jpg" alt="Cart page with items and totals" width="820"/></td></tr>
 <tr><td align="center"><em>The cart page</em></td></tr>
 <tr><td><img src="images/marketplace.jpg" alt="Signed-in product catalog with filters and sort" width="820"/></td></tr>

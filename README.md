@@ -15,7 +15,7 @@
 <p align="center">
   <img src="docs/images/hero.gif" alt="Screen recording of the chat: a shopper asks for noise-cancelling headphones and gets a product card, asks which has the best reviews and gets a rating breakdown, adds the Sony WH-1000XM5 to the cart from the chat, then checks out and lands on the placed order" width="820"/>
 </p>
-<p align="center"><em>Ask, compare the reviews, add to cart from the chat, check out. Recorded on the keyless stack; run it yourself with <code>./scripts/dev.sh --no-key</code>.</em></p>
+<p align="center"><em>Ask, compare the reviews, add to cart from the chat, check out. Recorded on the no-key stack; run it yourself with <code>./scripts/dev.sh --no-key</code>.</em></p>
 
 **A complete multi-agent e-commerce application built on [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF), in Python and .NET, and a 38-chapter course that teaches every piece of it.**
 
@@ -27,7 +27,7 @@ agent and builds up to it one mechanism at a time; chapter 1 runs with no API ke
 
 ## See it work
 
-Every clip below is recorded by a script on the keyless stack ([how](scripts/demo/README.md)), so what you see is what you get when you run it. The shopper sees answers and cards only; which agents did the work is listed here, not on screen.
+Every clip below is recorded by a script on the no-key stack ([how](scripts/demo/README.md)). The shopper sees answers and cards only; which agents did the work is listed here, not on screen.
 
 | Journey | What you see | Behind it |
 |---|---|---|
@@ -35,9 +35,29 @@ Every clip below is recorded by a script on the keyless stack ([how](scripts/dem
 | [Where is my order](docs/images/order.gif) | The order as a card: items, tracking, address | orchestrator, order management |
 | [One question, two specialists](docs/images/multi.gif) | "Is it a good deal, and is it in stock?" answered as a savings card and a stock card | orchestrator, pricing and promotions, inventory and fulfillment |
 | [A return that needs a person](docs/images/return.gif) | The customer confirms the exact return; a manager approves it in the inbox, with the policy's reasons; the order gets a printable label | order management, the approval policy, the approvals inbox |
-| [Should I buy now?](docs/images/research.gif) | One combined answer: reviews, stock, price trend, shipping | a fixed workflow that asks four specialists at once and merges the results |
-| [How it works, in the Lab](docs/images/lab.gif) | The same chat for staff: every agent and tool call, the live workflow graph, five modes compared side by side | everything, made visible |
+| [Should I buy now?](docs/images/research.gif) | One combined answer: reviews, stock, price trend, shipping | a fixed workflow: reviews, stock and price history at once, then shipping, merged into one answer. The tour's chip is pinned to it; a typed question is routed by the orchestrator |
+| [How it works, in the Lab](docs/images/lab.gif) | The same chat for staff: every agent and tool call, the live workflow graph, two modes compared side by side | everything, made visible |
 
+
+## Where to start
+
+| I want to... | Go here |
+|---|---|
+| **Learn MAF step by step** — start with no key | [tutorials/README.md](./tutorials/README.md) — 38 chapters; [run chapter 1](#learn) now |
+| **Just run it** | [Run it](#run-it) — Docker, one command, no key needed |
+| **Deploy it to my Azure subscription** | [Deploy to Azure](#deploy-to-azure) — about 10 minutes, about 1.4 USD a day |
+| **Choose an orchestration pattern** | [The five modes](#one-orchestrator-five-orchestration-modes) · [benchmark](docs/orchestration-benchmark.md) · [orchestration patterns](docs/concepts/06-orchestration-patterns.md) |
+| Run the .NET backend, or Windows, or with no API key | [Quick Start](https://nitinksingh.com/e-commerce-agents/getting-started/quick-start.html) |
+| Configure it | [Configuration](docs/configuration.md) — one `.env`, and how it reaches each service |
+| Read the documentation | **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — rendered and searchable |
+| **Brand new to AI — never run a model or written an agent** | [AI Knowledge Hub](https://nitinksingh.com/ai-resources/) — eleven modules, ten labs, free and local |
+| Learn what an agent even is — new to AI/agents | [Concepts](https://nitinksingh.com/e-commerce-agents/concepts/) — start at page 01 |
+| Watch the agents work: every step, the live graph, modes compared | The staff Lab at `/lab` (sign in as `admin.demo@gmail.com` / `admin123`) · [what it shows](docs/demo-guide.md#see-how-it-works-the-lab) |
+| Understand how the agents work / add a new one | [Architecture](docs/architecture.md) · [Adding an Agent](docs/adding-an-agent.md) |
+| Use the MCP server | [MCP Integration](docs/mcp-integration.md) |
+| See what shipped and what is next | [Roadmap](https://nitinksingh.com/e-commerce-agents/getting-started/roadmap.html) · [CHANGELOG](CHANGELOG.md) |
+| Look at the UI right now, nothing to install | [Live preview](https://nitinksingh.com/e-commerce-agents/preview/) (recorded answers, [how it works](docs/preview.md)) |
+| See the generative UI, test users and scenarios to try | [Demo guide](https://nitinksingh.com/e-commerce-agents/getting-started/demo-guide.html) |
 
 ## What is in the box
 
@@ -50,7 +70,7 @@ Every clip below is recorded by a script on the keyless stack ([how](scripts/dem
 | **Identity** | JWT sign-in, five roles (customer, power user, seller, support, admin), identity carried to every agent and tool |
 | **Safety** | Policy-routed human approval, checkpoints and resume, guardrails, grounding checks, idempotency on money-moving actions |
 | **Quality** | An eval suite that replays without a key in CI, a red-team set, dozens of CI checks per pull request |
-| **Operations** | OpenTelemetry into the Aspire dashboard, per-request token and cost tracking, Docker Compose with prebuilt images, a one-command Azure Container Apps deployment, tested from a clean subscription |
+| **Operations** | OpenTelemetry into the Aspire dashboard, per-request token and cost tracking, Docker Compose with prebuilt images, a one-command Azure Container Apps deployment |
 | **Two backends** | All of the above in Python, and in .NET / C# behind the same frontend and database, with the differences listed in the [parity matrix](docs/parity-matrix.md) |
 
 ## One orchestrator, five orchestration modes
@@ -86,7 +106,7 @@ uv run python -m evals.run_evals --suite safety      # prompt injection and jail
 ```
 
 Every specialist has a dataset, a committed baseline and a regression threshold, and the red-team suite runs beside
-them. Both replay recorded answers, so they need no key and run on every pull request. What the scores mean, and what
+them. Both replay recorded answers, so they need no key and run in CI on every pull request that touches agent or eval code. What the scores mean, and what
 they do not: [eval scorecard](docs/eval-scorecard.md) and [agent quality](docs/agent-quality.md).
 
 ## Learn
@@ -98,30 +118,40 @@ uv sync --project tutorials
 uv run --project tutorials python tutorials/01-first-agent/python/main.py
 ```
 
-It replays a recorded model response, so it works offline. From there, follow a
+With no key it replays a recorded model response, so it works offline; a model key in the repo-root `.env` makes it
+a live call instead (`LLM_PROVIDER=replay` forces the recording). From there, follow a
 [learning path](./tutorials/README.md#learning-paths) — first agent, inside an agent, workflows,
 multi-agent orchestration, production concerns — or the short route in the
 [course README](./tutorials/README.md).
 
 ## Run it
 
+**No API key, nothing to configure:**
+
 ```bash
 git clone https://github.com/nitin27may/e-commerce-agents.git
 cd e-commerce-agents
-cp .env.minimal .env          # set OPENAI_API_KEY — the only variable a first run needs
-./scripts/dev.sh --demo       # pulls prebuilt images, seeds, and starts everything
+./scripts/dev.sh --no-key     # builds the images, seeds, and starts everything with no model behind it
 ```
 
-Then open **http://localhost:3000** and sign in as `alice.johnson@gmail.com` / `customer123`.
-Docker is the only requirement — no Python, .NET or Node needed.
+Open **http://localhost:3000** and sign in as `tour@example.com` / `tour123`. Browsing, search, cart and checkout
+work, and the chat replays recorded answers for its suggested prompts (the journeys in the clips above). Docker is
+the only requirement; the first build takes about twelve minutes. PowerShell: `./scripts/dev.ps1 -NoKey`.
 
-`--demo` pulls the eleven released images from GitHub Container Registry instead of building them,
-which is the difference between a first run of about a minute and one of about twelve (a rough figure; it depends on your network and machine). Images are published for
-`linux/amd64` and `linux/arm64`, so Apple Silicon runs natively.
+**With a model key:**
 
-**No API key?** `./scripts/dev.sh --demo --no-key` (PowerShell: `./scripts/dev.ps1 -Demo -NoKey`) starts the whole stack with no model behind it: browsing, search, cart and checkout work, and chat replays recorded answers for the suggested prompts. The recordings ship in images built after this change; the released 1.4.0 images have none and report chat prompts as "not recorded". A local model through Ollama also needs no paid key: see [docs/quick-start.md](docs/quick-start.md#run-without-a-paid-api-key).
+```bash
+cp .env.minimal .env          # set OPENAI_API_KEY, the only variable a first run needs
+./scripts/dev.sh --demo       # pulls the prebuilt images instead of building them: about a minute
+```
 
-**Building from source instead** — drop the flag. This is the contributor path, and the one to use
+Then sign in as `alice.johnson@gmail.com` / `customer123`. `--demo` pulls the eleven released images from GitHub
+Container Registry, published for `linux/amd64` and `linux/arm64`. The released 1.4.0 images carry no recordings,
+so `--demo --no-key` answers every chat prompt with "not recorded" until the next release; use `--no-key` alone
+until then. A local model through Ollama also needs no paid key: see
+[docs/quick-start.md](docs/quick-start.md#run-without-a-paid-api-key).
+
+**Building from source with a key** — drop the flag. This is the contributor path, and the one to use
 if you have changed any code:
 
 ```bash
@@ -171,11 +201,9 @@ scripts/azure-up.sh                  # about 10 minutes, then prints the URL, th
 scripts/azure-down.sh --env <env>    # removes everything and proves it
 ```
 
-No model key, no Docker, no secrets to create. The script checks your subscription (providers, region, model quota),
-generates the secrets into Key Vault, provisions Azure Container Apps, PostgreSQL with pgvector, a Microsoft Foundry
-chat and embedding model reached through managed identity, Log Analytics and a 10 USD budget, then checks the result:
-every app healthy, the database seeded, one model call with no key and one chat turn. It was deployed and tested from
-a clean subscription.
+No model key, no Docker, no secrets to create. The script checks your subscription, provisions Container Apps,
+PostgreSQL with pgvector, Key Vault and a Foundry model reached through managed identity, then proves the result
+with one model call and one chat turn. It was deployed and tested from a clean subscription.
 
 <p align="center">
   <img src="docs/images/azure.gif" alt="Terminal recording, sped up: azure-up.sh checks the subscription, provisions PostgreSQL, Foundry, Key Vault and Container Apps, prints the URL and demo accounts, passes its checks, then the resource group and running apps are listed" width="820"/>
@@ -184,37 +212,15 @@ a clean subscription.
 
 | | |
 |---|---|
-| Time | about 8 minutes to provision, about 10 to a working URL |
-| Cost | it costs about 1.4 USD a day on the default `small` profile (scale to zero); `--llm replay` needs no model quota |
+| Time | about 10 minutes to a working URL |
+| Cost | it costs about 1.4 USD a day idle on the default `small` profile, plus model tokens; a budget alert is set |
 | Access | the frontend is reachable only from your public IP unless you pass `--public-open` |
-| Safe to repeat | yes; a failed step names its fix and the same command picks up where it stopped |
+| Teardown | `azure-down.sh --env <env>`, where `<env>` is the name the deploy banner printed |
 
 What it creates, every option and the cost breakdown: [docs/azure-deployment.md](docs/azure-deployment.md).
 There is also a portal button, which needs a few more steps ([details](docs/azure-deployment-reference.md#deploy-to-azure-button)):
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fnitin27may%2Fe-commerce-agents%2Fmain%2Finfra%2Fazuredeploy.json)
-
----
-
-## Where to start
-
-| I want to... | Go here |
-|---|---|
-| **Learn MAF step by step** — start with no key | [tutorials/README.md](./tutorials/README.md) — 38 chapters; [run chapter 1](#learn) now |
-| **Just run it** | [Run it](#run-it) above — Docker, one command |
-| **Deploy it to my Azure subscription** | [Deploy to Azure](#deploy-to-azure) — about 10 minutes, about 1.4 USD a day |
-| **Choose an orchestration pattern** | [The five modes](#one-orchestrator-five-orchestration-modes) · [benchmark](docs/orchestration-benchmark.md) · [orchestration patterns](docs/concepts/06-orchestration-patterns.md) |
-| Run the .NET backend, or Windows, or with no API key | [Quick Start](https://nitinksingh.com/e-commerce-agents/getting-started/quick-start.html) |
-| Configure it | [Configuration](docs/configuration.md) — one `.env`, and how it reaches each service |
-| Read the documentation | **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — rendered and searchable |
-| **Brand new to AI — never run a model or written an agent** | [AI Knowledge Hub](https://nitinksingh.com/ai-resources/) — eleven modules, ten labs, free and local |
-| Learn what an agent even is — new to AI/agents | [Concepts](https://nitinksingh.com/e-commerce-agents/concepts/) — start at page 01 |
-| Watch the agents work: every step, the live graph, modes compared | The staff Lab at `/lab` (sign in as `admin.demo@gmail.com` / `admin123`) · [what it shows](docs/demo-guide.md#see-how-it-works-the-lab) |
-| Understand how the agents work / add a new one | [Architecture](docs/architecture.md) · [Adding an Agent](docs/adding-an-agent.md) |
-| Use the MCP server | [MCP Integration](docs/mcp-integration.md) |
-| See what shipped and what is next | [Roadmap](https://nitinksingh.com/e-commerce-agents/getting-started/roadmap.html) · [CHANGELOG](CHANGELOG.md) |
-| Look at the UI right now, nothing to install | [Live preview](https://nitinksingh.com/e-commerce-agents/preview/) (recorded answers, [how it works](docs/preview.md)) |
-| See the generative UI, test users and scenarios to try | [Demo guide](https://nitinksingh.com/e-commerce-agents/getting-started/demo-guide.html) |
 
 ---
 
@@ -314,8 +320,6 @@ switch with `./scripts/dev.sh --dotnet`. Parity is checked in CI by a keyless ga
 
 ---
 
----
-
 ## Documentation
 
 Everything below is published, searchable and cross-linked at
@@ -366,7 +370,7 @@ checkboxes and the reasoning for the order, is on the
 
 | Next | What it is |
 |---|---|
-| **Azure and Microsoft Foundry** | The one-command Container Apps deployment ran from a clean subscription ([Deploy to Azure](#deploy-to-azure)). Next: Foundry features that need an Azure credential (hosted agents, evaluators logging to a project) and the measured cost of the larger topologies. The .NET 11 move is a separate, later change |
+| **Azure and Microsoft Foundry** | The one-command Container Apps deployment is done ([Deploy to Azure](#deploy-to-azure)). Next: Foundry features that need an Azure credential (hosted agents, evaluators logging to a project) and the measured cost of the larger topologies |
 | **Finish the gates** | The keyless parity gate runs in CI, but it covers only turns that call no model. A model-calling comparison across the two stacks needs a key, and the .NET eval suite still needs its baselines |
 | **Retrieval and tooling** | A typed filter DSL for `search_products`, the two MCP servers published to PyPI, and prompt caching — now measurable, because the cost counter ships |
 

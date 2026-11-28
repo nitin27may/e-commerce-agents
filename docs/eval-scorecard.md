@@ -4,7 +4,7 @@
 
 Scores per specialist and dataset, as committed in `agents/python/evals/baselines/python-inproc-replay/` (baselines are keyed by setup: stack, target and model).
 
-**Read this first.** These numbers are a regression signal, not a quality measurement. Every case was answered from a replay fixture recorded on `gpt-4.1-2025-04-14` (171 fixtures) between 2026-08-21 and 2026-11-28, and the scorer is deterministic: groundedness is a database check, correctness is a tool or route match, and completeness is a keyword check, not a judge model. A score tells you the recorded answers still pass the current code and prompts, which is what the PR job named Replay regression checks. It says nothing about how a different model, or the same model today, would do. Each dataset has five or six cases, so one flipped case moves a score by 0.1 or more, and the score is a property of the recording session as much as of the system (see `agents/python/evals/fixtures/README.md`).
+**Read this first.** These numbers are a regression signal, not a quality measurement. Every case was answered from a replay fixture recorded on `gpt-4.1-2025-04-14` (154 fixtures) between 2026-08-21 and 2026-11-28, and the scorer is deterministic: groundedness is a database check, correctness is a tool or route match, and completeness is a keyword check, not a judge model. A score tells you the recorded answers still pass the current code and prompts, which is what the PR job named Replay regression checks. It says nothing about how a different model, or the same model today, would do. Each dataset has five or six cases, so one flipped case moves a score by 0.1 or more, and the score is a property of the recording session as much as of the system (see `agents/python/evals/fixtures/README.md`).
 
 ## Quality baselines
 
@@ -80,7 +80,7 @@ Tokens per request before the user's message, counted with `o200k_base` (`evals/
 
 **These are live runs, not replay.** Each row is one sitting of one model with an LLM judge, taken through the in-process target on a freshly seeded database. With one repeat there is no spread: a single flipped case moves a suite by a few points, and a rerun can move it too. They are stored under their own setup key and the replay gate never compares against them. A self-judged run says so in the Judge column. A case the judge could not score (content filter) is noted beside Passed, with how many of those the less strict keyword fallback scored instead. Cost is the tokens times the price in `config/pricing/models.yaml` with cached input billed at the full rate, so it is an upper bound, and it excludes the judge calls.
 
-| Date | Setup | Model | Judge | k | Agent | Dataset | Cases | Passed | Groundedness | Correctness | Completeness | Overall | Cost (USD) |
+| Date | Setup | Model | Judge | k | Agent | Dataset | Cases | Passed | Groundedness | Correctness | Completeness | Overall | Est. cost (USD) |
 |------|-------|-------|-------|--:|-------|---------|------:|-------:|-------------:|------------:|-------------:|--------:|-----------:|
 | 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | inventory-fulfillment | `inventory_fulfillment.live.json` | 29 | 28 | 1.00 | 0.97 | 0.79 | 0.94 | 0.65 |
 | 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | orchestrator | `orchestrator_routing.live.json` | 31 | 30 | 1.00 | 1.00 | 0.88 | 0.97 | 0.97 |

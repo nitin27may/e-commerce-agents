@@ -44,6 +44,12 @@ done
 [ $# -gt 0 ] && [ ${#APP[@]} -eq 0 ] && exit 0
 
 curl -sf "$API/health" >/dev/null || { echo "the stack is not up at $API: ./scripts/dev.sh --no-key" >&2; exit 1; }
+# The clips are made from recorded answers only. A stack with a live model would film answers nobody can reproduce
+# (and spend tokens), and one without the tour has none of the accounts the scenarios sign in as.
+curl -sf "$API/api/demo/tour" >/dev/null || {
+  echo "$API is not the no-key stack (no /api/demo/tour). Start it with ./scripts/dev.sh --no-key" >&2
+  exit 1
+}
 
 GREP=()
 if [ ${#APP[@]} -gt 0 ]; then

@@ -148,3 +148,39 @@ Verified: answer text across all 316 recorded fixtures names no tool and no agen
 - **Stale sentiment recording.** The review-sentiment chart prompt no longer replays: its tool buckets by month relative to today, so the recording went stale. It needs re-recording (step 5).
 - **Hard-coded Aspire link.** The /runs "Aspire" link points at `http://localhost:18888` even on a deployed stack.
 - **Landing page wording.** The public landing page (`/`) still says "Meet the agents". It is the project's pitch page, not the store, so this is the owner's call.
+
+## 5. Final passes (2026-11-27)
+
+**Seed and recordings.** Product ratings now come from the seeded reviews (the XM5 showed 4.7 over reviews averaging
+3.9). That moved every recorded answer that quotes a rating, so the product-discovery evals (baseline 96.7%) and the
+whole demo set were re-recorded: 46 manifest turns into an empty directory on a fresh database, then a
+pure replay in reverse order with no miss. Two takes were re-recorded by hand: an Allbirds search where the model sent
+an unsupported `brand` argument and found nothing, and one that quoted a product id with a group missing. Every id
+quoted in an answer was then checked against the database. The return journey now uses whole-order wording.
+
+**Proofread (Fable) and new-developer read, applied.**
+
+- README leads with the command that works today (`./scripts/dev.sh --no-key`, tour account); `--demo --no-key` gets
+  recordings with the next release. "Where to start" sits under the clips. The Azure section is shorter, "clean
+  subscription" appears once, the teardown row says where the env name comes from.
+- Counts and claims: two modes in the Lab clip, three fan-out branches then shipping, evals run on PRs that touch
+  agent or eval code, roadmap marks the Azure run and .NET 11
+  done and calls the budget an alert, not a cap. Eval cost is labelled an estimate.
+- Demo guide: one accounts table (power user and tour added), the return steps under their own heading, the stale
+  demo-clip reference removed, the duplicate `flow-refund` still dropped. Quick start's dead `#test-users` link fixed.
+- Tooling: `record-media.sh` refuses a stack without `/api/demo/tour` (only the no-key overlay enables it), the
+  superseded `readme-screenshots.spec.ts` is deleted, `azure-*.sh --help` prints clean text, `azure-down.sh` lists the
+  local environments when `--env` is missing (it never guesses: it deletes), azd's role-assignment preflight warning
+  is documented as harmless, and `scripts/demo/README.md` lists every script.
+- UI: the Compare dialog's mode chips were clickable spans; they are toggle buttons with `aria-pressed`. The media spec
+  selects modes by that state, so the Compare still no longer films a replay-miss card.
+
+**A leak the specs caught.** Fixing the stale e2e assertions turned up a real one: the admin and seller greetings said
+"I'm your customer support orchestrator", because the prompt's first line named the role and told the model to introduce
+itself. The prompt now says shopping assistant and forbids the words; the demo set (160 fixtures) and the orchestrator
+eval fixtures were re-recorded, unreachable eval fixtures removed with a one-off hit log (not committed), every baseline
+reproduced, and an audit of every recorded reply found no internals and no wrong "couldn't find".
+
+**Left for the owner.** The CHANGELOG's Unreleased "Added" list carried duplicate bullets before this branch (the
+merchant-ops entry three times, and others twice); worth a cleanup before cutting 1.5.0. Cut v1.5.0 after merge so
+`--demo --no-key` ships the recordings.

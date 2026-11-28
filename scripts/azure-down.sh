@@ -33,12 +33,16 @@ while [ $# -gt 0 ]; do
         --purge-only) PURGE_ONLY=1; shift ;;
         --keep-local) KEEP_LOCAL=1; shift ;;
         --dry-run) AZURE_DRY_RUN=1; shift ;;
-        -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,25s/^# \{0,1\}//p' "$0"; exit 0 ;;
         *) die "unknown argument: $1" ;;
     esac
 done
 export AZURE_DRY_RUN
-[ -n "$ENV_NAME" ] || die "--env is required"
+if [ -z "$ENV_NAME" ]; then
+    # Never guessed: this deletes things. Name the candidates instead (azure-up prints its env name in its banner).
+    known="$(find .azure -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | sort | tr '\n' ' ')"
+    die "--env is required. azd environments on this machine: ${known:-none}"
+fi
 [[ "$ENV_NAME" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "--env must be lowercase letters, digits and dashes (max 31)"
 resource_group="rg-$ENV_NAME"
 local_state=".azure/$ENV_NAME"

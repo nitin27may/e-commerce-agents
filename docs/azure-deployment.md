@@ -119,6 +119,9 @@ scripts/azure/verify-clean.sh --env <env>    # read only: nine CLEAN lines
 - The PostgreSQL admin password stays a generated password; the rest is keyless.
 - A new subscription allows one Container Apps environment.
 - After idle, the first request can be slow while the apps start.
+- `azd provision` prints "(!) Warning: Role assignment permissions at the target scopes were not verified". It is
+  azd's own preflight note and safe to ignore: `scripts/azure/prereqs.sh` has already checked that you can write role
+  assignments before anything is created.
 - Evaluations and the generated-UI cards are not covered by the deployed checks; run them locally.
 
 More: [stages, costs and teardown in detail](azure-deployment-stages.md), [reference](azure-deployment-reference.md) (profiles, wiring, optional gateway and per-app identities, the Deploy to Azure button), [troubleshooting](troubleshooting.md#azure-deployment-first-run-failure-catalogue).
