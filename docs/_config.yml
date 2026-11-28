@@ -174,7 +174,7 @@ defaults:
   - scope:
       path: ""
     values:
-      image: https://nitinksingh.com/e-commerce-agents/docs/images/agent-timeline.png
+      image: https://nitinksingh.com/e-commerce-agents/docs/images/flow-product-search.jpg
 
 twitter:
   card: summary_large_image

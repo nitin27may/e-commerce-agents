@@ -1,0 +1,108 @@
+{
+  "about": "Every recorded demo clip: what it shows, which agents do the work, and where the files are. GIFs are committed (docs/images); MP4s at 2560 px are written to docs/media/ by scripts/record-media.sh and not committed. Re-record with scripts/record-media.sh (scripts/demo/README.md).",
+  "clips": [
+    {
+      "id": "hero",
+      "title": "Shop and check out",
+      "caption": "A shopper asks for noise-cancelling headphones, asks which has the best reviews, adds the Sony WH-1000XM5 to the cart from the chat, and checks out.",
+      "agents": [
+        "orchestrator",
+        "product-discovery",
+        "review-sentiment",
+        "cart tools"
+      ],
+      "mermaid": "flowchart LR\n  U([Shopper]) --> O[Orchestrator]\n  O -->|search| PD[Product discovery]\n  O -->|reviews| RS[Review sentiment]\n  O -->|add to cart| C[Cart tools]\n  C --> K[Checkout page]",
+      "alt": "Chat recording: product card, review summary with rating bars, cart card, then the placed order",
+      "gif": "docs/images/hero.gif",
+      "mp4_local": "docs/media/hero.mp4",
+      "seconds": 26.5
+    },
+    {
+      "id": "order",
+      "title": "Where is my order",
+      "caption": "The latest order comes back as an order card: items, totals, carrier, tracking number and address.",
+      "agents": [
+        "orchestrator",
+        "order-management"
+      ],
+      "mermaid": "flowchart LR\n  U([Shopper]) --> O[Orchestrator] -->|order lookup| OM[Order management]",
+      "alt": "Chat recording: the latest order rendered as an order card",
+      "gif": "docs/images/order.gif",
+      "mp4_local": "docs/media/order.mp4",
+      "seconds": 9.8
+    },
+    {
+      "id": "multi",
+      "title": "One question, two specialists",
+      "caption": "\"Is the Sony WH-1000XM5 a good deal right now, and is it in stock?\" Pricing works out the shopper's Gold-member savings, inventory finds the nearest warehouse with stock, and the answer arrives as two cards.",
+      "agents": [
+        "orchestrator",
+        "pricing-promotions",
+        "inventory-fulfillment"
+      ],
+      "mermaid": "flowchart LR\n  U([Shopper]) --> O[Orchestrator]\n  O -->|deal?| PP[Pricing and promotions]\n  O -->|stock?| IF[Inventory and fulfillment]\n  PP --> A[Savings card]\n  IF --> B[Stock card]",
+      "alt": "Chat recording: one question answered as a savings card and a stock card",
+      "gif": "docs/images/multi.gif",
+      "mp4_local": "docs/media/multi.mp4",
+      "seconds": 16.2
+    },
+    {
+      "id": "return",
+      "title": "A return that needs a person",
+      "caption": "The customer gives a reason and confirms the exact return; policy routes it to a manager, who approves it in the inbox with the reasons shown; the order then carries the refund and a printable label.",
+      "agents": [
+        "orchestrator",
+        "order-management",
+        "approval policy",
+        "approvals inbox"
+      ],
+      "mermaid": "flowchart LR\n  U([Customer]) --> O[Orchestrator] --> OM[Order management]\n  OM -->|confirm first| U\n  OM -->|over 500| P{Approval policy}\n  P --> M([Manager approves])\n  M --> L[Return with label]",
+      "alt": "Recording: return confirmed in chat, approved in the approvals inbox, order page with a Download return label button",
+      "gif": "docs/images/return.gif",
+      "mp4_local": "docs/media/return.mp4",
+      "seconds": 38.1
+    },
+    {
+      "id": "research",
+      "title": "Should I buy now?",
+      "caption": "A fixed workflow asks four specialists at once (reviews, stock, price history, shipping) and merges the results into one answer. It calls no model.",
+      "agents": [
+        "pre-purchase workflow",
+        "review-sentiment",
+        "inventory-fulfillment",
+        "pricing-promotions"
+      ],
+      "mermaid": "flowchart LR\n  Q([Question]) --> F[Fan out]\n  F --> R[Reviews]\n  F --> S[Stock]\n  F --> H[Price history]\n  R --> M[Merge and ship]\n  S --> M\n  H --> M\n  M --> A[Answer]",
+      "alt": "Chat recording: a pre-purchase question answered with reviews, stock, price trend and shipping",
+      "gif": "docs/images/research.gif",
+      "mp4_local": "docs/media/research.mp4",
+      "seconds": 18.7
+    },
+    {
+      "id": "lab",
+      "title": "How it works: the Lab",
+      "caption": "The staff-only Lab is the same chat with its machinery shown: which agents answered, every tool call with its timing, the grounding report, the workflow graph lighting up live, and five orchestration modes compared side by side.",
+      "agents": [
+        "all"
+      ],
+      "mermaid": null,
+      "alt": "Recording of the Lab: agent activity, the live workflow graph, and the Compare dialog",
+      "gif": "docs/images/lab.gif",
+      "mp4_local": "docs/media/lab.mp4",
+      "seconds": 56.3
+    },
+    {
+      "id": "evals",
+      "title": "Quality you can check",
+      "caption": "A specialist scored against its committed baseline, then the red-team suite resisting 8 of 8 attacks. Both replay recorded answers: no API key.",
+      "agents": [
+        "eval harness"
+      ],
+      "mermaid": null,
+      "alt": "Terminal recording of a keyless eval run and the red-team suite",
+      "gif": "docs/images/evals.gif",
+      "mp4_local": "docs/media/evals.mp4",
+      "seconds": 24.0
+    }
+  ]
+}

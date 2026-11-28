@@ -412,13 +412,13 @@ The pause carries the whole `WorkflowState` and is answered with a `ReturnDecisi
 `RETURN_HITL_THRESHOLD` is only the fallback when the engine cannot decide. Migration `0010` expires returns paused
 before the policy gate existed: their checkpoints cannot be resumed with the `ReturnDecision` response type.
 
-![Runs page as an admin: the tour user's return marked Needs approval and expanded to show Approve and Reject](images/runs-approval.jpg)
+![Runs page as an admin: the tour user's return marked Needs approval, above the tour's other runs](images/runs-approval.jpg)
 
 *A paused return on `/runs`, seen by a reviewer. The customer who asked for it sees the in-chat card below and
 no buttons; a staff member decides here or in the approvals inbox, and the run resumes from its checkpoint as
 the customer.*
 
-![Chat showing a return paused at the policy gate with an Awaiting staff review card and the workflow graph](images/return-awaiting-approval.jpg)
+![Chat showing a return paused at the policy gate with an Awaiting staff review notice](images/return-awaiting-approval.jpg)
 
 *The requester's side of the same pause: nothing has been created, the card says so.*
 

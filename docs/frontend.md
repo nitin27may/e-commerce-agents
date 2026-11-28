@@ -15,12 +15,12 @@ client `web/src/lib/api.ts`.
 
 <table>
 <tr>
-  <td><img src="images/shop-ai-assistant.png" alt="AI shopping assistant with product cards" width="400"/></td>
-  <td><img src="images/agent-timeline.png" alt="Live agent activity timeline" width="400"/></td>
+  <td><img src="images/flow-product-search.jpg" alt="Chat answering a product search with a product card" width="400"/></td>
+  <td><img src="images/agent-timeline.jpg" alt="The Lab's agent activity list for a tool-routed turn" width="400"/></td>
 </tr>
 <tr>
-  <td align="center"><em>AI shopping assistant — product cards from Product Discovery agent</em></td>
-  <td align="center"><em>Agent activity timeline — live orchestrator → specialist → tool trace</em></td>
+  <td align="center"><em>The storefront chat: answers as cards (<code>/chat</code>)</em></td>
+  <td align="center"><em>The staff Lab: every agent and tool call behind the same answer (<code>/lab</code>)</em></td>
 </tr>
 </table>
 

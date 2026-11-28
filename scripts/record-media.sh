@@ -59,6 +59,15 @@ for dir in "$FRAMES"/*/; do
   name="$(basename "$dir")"
   case "$name" in
     *-[0-9]) continue ;;
+    stills)
+      # Docs stills: 2x PNGs from the spec, written as JPEG (a fraction of the size, no visible loss at q85).
+      for png in "$dir"*.png; do
+        [ -f "$png" ] || continue
+        out="$ROOT/docs/images/$(basename "$png" .png).jpg"
+        ffmpeg -y -loglevel error -i "$png" -q:v 3 "$out"
+        echo "wrote docs/images/$(basename "$out") ($(du -h "$out" | cut -f1))"
+      done
+      continue ;;
   esac
   "$ROOT/scripts/demo/encode.sh" "$dir" "$name" --gif-fps 13 --mp4-width 2560
 done

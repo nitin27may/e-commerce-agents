@@ -181,6 +181,126 @@ async function showLatestAnswer(page: Page) {
 
 // ── Scenarios ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
+/** A 2x still for the docs: written as PNG next to the clips, converted to JPG by scripts/record-media.sh. */
+async function still(page: Page, name: string, opts: { fullPage?: boolean } = {}) {
+  // The pointer helps a viewer follow a clip; in a still it is just an arrow in the corner.
+  await page.evaluate(() => document.getElementById("__media-pointer")?.style.setProperty("display", "none"));
+  await beat(page, 500);
+  await page.screenshot({ path: path.join(FRAMES_ROOT, "stills", `${name}.png`), fullPage: opts.fullPage ?? false });
+}
+
+test("stills: every documented screen, on the current UI", async ({ browser }) => {
+  test.setTimeout(600_000);
+  // Logged out: the public storefront and assistant.
+  const guestContext = await browser.newContext({ baseURL: BASE_URL, viewport: VIEWPORT, deviceScaleFactor: SCALE });
+  const guest = await guestContext.newPage();
+  await guest.goto("/shop");
+  await guest.waitForLoadState("networkidle").catch(() => {});
+  await still(guest, "storefront");
+  await guest.goto("/shop/assistant");
+  await guest.waitForLoadState("networkidle").catch(() => {});
+  await still(guest, "flow-guest-assistant");
+  await guestContext.close();
+
+  // A shopper: catalog, chat answers as cards, the cart.
+  const a = await stage(browser, ALICE);
+  await a.page.goto("/products");
+  await a.page.waitForLoadState("networkidle").catch(() => {});
+  await still(a.page, "marketplace");
+  await openChat(a.page);
+  await ask(a.page, "Find me wireless headphones under $300 with good noise cancellation");
+  await showLatestAnswer(a.page);
+  await still(a.page, "flow-product-search");
+  await openChat(a.page);
+  await ask(a.page, PROMPTS.latestOrder);
+  await still(a.page, "flow-order-tracking");
+  await openChat(a.page);
+  await ask(a.page, "What do people think about the Dyson V15?");
+  await still(a.page, "flow-review-sentiment");
+  await a.page.goto("/cart");
+  await a.page.waitForLoadState("networkidle").catch(() => {});
+  await still(a.page, "flow-view-cart");
+  await a.context.close();
+
+  // The tour visitor: add to cart in chat, and a return that pauses for staff.
+  const t = await stage(browser, TOUR, { resetTour: true, pace: 0 });
+  await openChat(t.page);
+  await ask(t.page, PROMPTS.search);
+  await ask(t.page, PROMPTS.reviews);
+  await ask(t.page, PROMPTS.addToCart);
+  await still(t.page, "flow-add-to-cart");
+  await openChat(t.page);
+  const before = await answerCount(t.page);
+  await glideClick(t.page, t.page.getByRole("button", { name: "Return my Dyson (needs approval)" }));
+  await waitForTurn(t.page, before);
+  await still(t.page, "return-awaiting-approval");
+  await still(t.page, "flow-refund");
+  await t.context.close();
+
+  // Staff: the parked return on /runs and in the approvals inbox, and the dashboards.
+  const s = await stage(browser, ADMIN);
+  await s.page.goto("/runs");
+  await s.page.waitForLoadState("networkidle").catch(() => {});
+  await still(s.page, "runs-approval");
+  await s.page.getByText(/needs approval/i).first().click();
+  await beat(s.page, 800);
+  await still(s.page, "runs-approve");
+  await s.page.goto("/admin/approvals");
+  await s.page.waitForLoadState("networkidle").catch(() => {});
+  const details = s.page.getByText(/show details/i).first();
+  if (await details.isVisible().catch(() => false)) await details.click();
+  await beat(s.page, 800);
+  await still(s.page, "approvals-inbox");
+  await s.page.goto("/admin");
+  await s.page.waitForLoadState("networkidle").catch(() => {});
+  await still(s.page, "admin-dashboard");
+
+  // The Lab: the step timeline, the live graph mid-run, and Compare.
+  await openChat(s.page, "/lab");
+  await ask(s.page, PROMPTS.dealAndStock);
+  // The timeline is open while a turn streams and folds when it ends: open it only if it is closed.
+  const toggle = s.page.locator('button[aria-expanded]').filter({ hasText: /agent activity/i }).last();
+  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+  await beat(s.page, 600);
+  const timeline = toggle;
+  await timeline.scrollIntoViewIfNeeded().catch(() => {});
+  await still(s.page, "agent-timeline");
+  await s.context.close();
+
+  const g = await stage(browser, ADMIN, { pace: 1_100 });
+  await openChat(g.page, "/lab");
+  await g.page.getByLabel("Orchestration mode").click();
+  await g.page.getByRole("option", { name: /pre-purchase/i }).first().click();
+  const input = g.page.locator("textarea").first();
+  await input.fill(PROMPTS.prePurchase);
+  await input.press("Enter");
+  await g.page.waitForSelector(STOP, { state: "attached", timeout: 20_000 });
+  await beat(g.page, 2_300);
+  await still(g.page, "orchestration-graph-live");
+  await g.page.waitForSelector(STOP, { state: "detached", timeout: 120_000 });
+  await g.page.getByRole("button", { name: /^Compare/ }).first().click();
+  const dialog = g.page.getByRole("dialog");
+  await dialog.locator("textarea").fill(PROMPTS.prePurchase);
+  const toolRouter = dialog.getByText("Tool Router", { exact: true });
+  if (await toolRouter.isVisible().catch(() => false)) await toolRouter.click();
+  await dialog.getByText(/^Pre-Purchase Research/).click();
+  await dialog.getByText(/^Return & Replace/).click();
+  await dialog.getByRole("button", { name: /run comparison/i }).click();
+  await expect(dialog.getByTestId(/^usage-/).first()).toBeVisible({ timeout: 60_000 });
+  await beat(g.page, 1_200);
+  await still(g.page, "compare-dialog");
+  await still(g.page, "mode-compare");
+  await g.context.close();
+
+  // A seller.
+  const seller = await stage(browser, { email: "seller.demo@gmail.com", password: "seller123" });
+  await seller.page.goto("/seller");
+  await seller.page.waitForLoadState("networkidle").catch(() => {});
+  await still(seller.page, "seller-dashboard");
+  await seller.context.close();
+});
+
+
 test("order: where is my order", async ({ browser }) => {
   const { context, page } = await stage(browser, ALICE);
   await openChat(page);

@@ -13,9 +13,9 @@
 [<img src="https://github.com/codespaces/badge.svg" alt="Open in GitHub Codespaces" height="20">](https://codespaces.new/nitin27may/e-commerce-agents)
 
 <p align="center">
-  <img src="docs/images/demo.gif" alt="Screen recording of the chat: a question about noise-cancelling headphones answered with product cards, the orchestration mode switched to pre-purchase research with its graph animating, then a return that pauses at an Awaiting staff review card" width="820"/>
+  <img src="docs/images/hero.gif" alt="Screen recording of the chat: a shopper asks for noise-cancelling headphones and gets a product card, asks which has the best reviews and gets a rating breakdown, adds the Sony WH-1000XM5 to the cart from the chat, then checks out and lands on the placed order" width="820"/>
 </p>
-<p align="center"><em>Recorded on the no-key stack (recorded model responses): ask, get cards, switch mode, watch the graph, a return waits for a person. Run it yourself with <code>./scripts/dev.sh --no-key</code>.</em></p>
+<p align="center"><em>Ask, compare the reviews, add to cart from the chat, check out. Recorded on the keyless stack; run it yourself with <code>./scripts/dev.sh --no-key</code>.</em></p>
 
 **A complete multi-agent e-commerce application built on [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF), in Python and .NET, and a 38-chapter course that teaches every piece of it.**
 
@@ -25,14 +25,26 @@ handle product search, orders, pricing, reviews and inventory, backed by Postgre
 approvals, guardrails, evals, tracing and deployment around them. The course starts from a first
 agent and builds up to it one mechanism at a time; chapter 1 runs with no API key and no Docker.
 
-![Chat with a side-by-side product comparison, the Compare button and the orchestration mode switcher](docs/images/flow-product-search.png)
+## See it work
+
+Every clip below is recorded by a script on the keyless stack ([how](scripts/demo/README.md)), so what you see is what you get when you run it. The shopper sees answers and cards only; which agents did the work is listed here, not on screen.
+
+| Journey | What you see | Behind it |
+|---|---|---|
+| [Shop and check out](docs/images/hero.gif) | Product cards, a review summary, added to cart from the chat, checkout | orchestrator, product discovery, review sentiment, the cart tools |
+| [Where is my order](docs/images/order.gif) | The order as a card: items, tracking, address | orchestrator, order management |
+| [One question, two specialists](docs/images/multi.gif) | "Is it a good deal, and is it in stock?" answered as a savings card and a stock card | orchestrator, pricing and promotions, inventory and fulfillment |
+| [A return that needs a person](docs/images/return.gif) | The customer confirms the exact return; a manager approves it in the inbox, with the policy's reasons; the order gets a printable label | order management, the approval policy, the approvals inbox |
+| [Should I buy now?](docs/images/research.gif) | One combined answer: reviews, stock, price trend, shipping | a fixed workflow that asks four specialists at once and merges the results |
+| [How it works, in the Lab](docs/images/lab.gif) | The same chat for staff: every agent and tool call, the live workflow graph, five modes compared side by side | everything, made visible |
+
 
 ## What is in the box
 
 | Layer | What runs |
 |---|---|
 | **Web app** | Next.js storefront, cart, checkout and orders; streaming chat that renders product cards, tables and charts; seller and admin dashboards; an approvals inbox |
-| **Orchestration** | One orchestrator, five selectable modes (below), a live graph of the run and a side-by-side compare view |
+| **Orchestration** | One orchestrator, five selectable modes (below); a staff-only Lab with a live graph of each run, every agent and tool step, and a side-by-side compare view |
 | **Agents** | Five specialists as separate services, talking A2A 1.0, with optional MCP servers for product and inventory data |
 | **Data** | PostgreSQL with pgvector for semantic search, numbered migrations, a deterministic seeder, Redis for rate limiting |
 | **Identity** | JWT sign-in, five roles (customer, power user, seller, support, admin), identity carried to every agent and tool |
@@ -44,7 +56,8 @@ agent and builds up to it one mechanism at a time; chapter 1 runs with no API ke
 ## One orchestrator, five orchestration modes
 
 Most agent samples show one orchestration pattern in isolation. Here the orchestrator runs the same
-request through any of five, selected per request in the chat box, so "which one should I use?" has a measured answer:
+request through any of five, so "which one should I use?" has a measured answer. Shoppers never see
+the choice; developers switch modes, watch the graph and compare them in the staff-only Lab (`/lab`):
 
 | Mode | How the agents are coordinated | p50 latency | Model calls |
 |---|---|---|---|
@@ -54,11 +67,27 @@ request through any of five, selected per request in the chat box, so "which one
 | `workflow:pre-purchase` | A fixed graph fans out to several specialists at once and merges the results | 0.26 s | none |
 | `workflow:return-replace` | A fixed sequential graph that pauses for human approval before anything is created | 0.10 s | none |
 
-![Compare dialog: one prompt run through four orchestration modes, each card showing latency, steps, tokens, cost and the graph it took](docs/images/mode-compare.jpg)
+![The Lab's Compare dialog: one prompt run through the pre-purchase and return-and-replace workflows, each with its answer, latency, steps and graph](docs/images/compare-dialog.jpg)
 
 The two workflow modes call no model, so they are doing less work, not the same work faster.
 Method, token and cost figures: [orchestration benchmark](docs/orchestration-benchmark.md)
 (gpt-4.1, 40 requests). How each pattern works: [orchestration patterns](docs/concepts/06-orchestration-patterns.md).
+
+## Quality you can check
+
+<p align="center">
+  <img src="docs/images/evals.gif" alt="Terminal recording: a product-discovery eval scored against its committed baseline with no API key, then the red-team suite resisting 8 of 8 attacks" width="820"/>
+</p>
+
+```bash
+cd agents/python
+uv run python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json --baseline-from reference
+uv run python -m evals.run_evals --suite safety      # prompt injection and jailbreak attempts
+```
+
+Every specialist has a dataset, a committed baseline and a regression threshold, and the red-team suite runs beside
+them. Both replay recorded answers, so they need no key and run on every pull request. What the scores mean, and what
+they do not: [eval scorecard](docs/eval-scorecard.md) and [agent quality](docs/agent-quality.md).
 
 ## Learn
 
@@ -174,6 +203,7 @@ There is also a portal button, which needs a few more steps ([details](docs/azur
 | Read the documentation | **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — rendered and searchable |
 | **Brand new to AI — never run a model or written an agent** | [AI Knowledge Hub](https://nitinksingh.com/ai-resources/) — eleven modules, ten labs, free and local |
 | Learn what an agent even is — new to AI/agents | [Concepts](https://nitinksingh.com/e-commerce-agents/concepts/) — start at page 01 |
+| Watch the agents work: every step, the live graph, modes compared | The staff Lab at `/lab` (sign in as `admin.demo@gmail.com` / `admin123`) · [what it shows](docs/demo-guide.md#see-how-it-works-the-lab) |
 | Understand how the agents work / add a new one | [Architecture](docs/architecture.md) · [Adding an Agent](docs/adding-an-agent.md) |
 | Use the MCP server | [MCP Integration](docs/mcp-integration.md) |
 | See what shipped and what is next | [Roadmap](https://nitinksingh.com/e-commerce-agents/getting-started/roadmap.html) · [CHANGELOG](CHANGELOG.md) |
