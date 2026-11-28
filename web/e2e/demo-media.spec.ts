@@ -481,3 +481,25 @@ test("hero: search, compare reviews, add to cart, check out", async ({ browser }
   console.log("hero", await rec.stop());
   await context.close();
 });
+
+test("azure: the same store, live on Azure with a real model", async ({ browser }) => {
+  // Runs only against a deployment (scripts/azure-up.sh): E2E_BASE_URL is its frontend, reachable from the IP that
+  // deployed it. The model is live (gpt-4.1-mini on Foundry), so the answer is whatever it says today.
+  test.skip(!process.env.AZURE_CLIP, "set AZURE_CLIP=1 and E2E_BASE_URL to a deployed frontend");
+  test.setTimeout(240_000);
+  const { context, page } = await stage(browser, ALICE);
+  await openChat(page);
+  const rec = await startScreencast(page, take("azure-app"));
+  await beat(page, 800);
+  await ask(page, PROMPTS.dealAndStock);
+  await showLatestAnswer(page);
+  await beat(page, 2_500);
+  await page.mouse.move(900, 450);
+  for (let i = 0; i < 5; i++) {
+    await page.mouse.wheel(0, 220);
+    await beat(page, 650);
+  }
+  await beat(page, 2_000);
+  console.log("azure-app", await rec.stop());
+  await context.close();
+});

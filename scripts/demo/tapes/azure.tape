@@ -38,7 +38,7 @@ Type "clear" Enter
 Show
 Type "# What it created: one resource group." Enter
 Sleep 500ms
-Type `az resource list -g rg-eca-demo --query "sort_by([].{name:name, type:type}, &type)" -o table | scripts/demo/redact.sh` Enter
+Type `az resource list -g rg-eca-demo --query "sort_by([].{Name:name, Type:type}, &Type)" -o table | scripts/demo/redact.sh` Enter
 Wait+Line@60s /^\$\s*$/
 Sleep 4s
 
@@ -47,6 +47,6 @@ Type "clear" Enter
 Show
 Type "# The apps: everything but the frontend is internal, and idle apps scale to zero." Enter
 Sleep 500ms
-Type `az containerapp list -g rg-eca-demo --query "[].{app:name, status:properties.runningStatus, ingress:properties.configuration.ingress.external}" -o table | scripts/demo/redact.sh` Enter
+Type `az containerapp list -g rg-eca-demo --query "[].{App:name, Status:properties.runningStatus, Public:properties.configuration.ingress.external}" -o table --only-show-errors | scripts/demo/redact.sh` Enter
 Wait+Line@60s /^\$\s*$/
 Sleep 4s

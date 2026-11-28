@@ -145,7 +145,7 @@ the Aspire container. See [telemetry.md](./telemetry.md).
 
 ## Azure deployment: first-run failure catalogue
 
-Fifty-one ways a first `scripts/azure-up.sh` goes wrong, and what already guards against each. Most were written before the first real deployment; the ones that real runs actually hit are listed in [findings from the real runs](azure-deployment-stages.md#findings-from-the-real-runs). When one fires, the message names the fix.
+Fifty-six ways a first `scripts/azure-up.sh` goes wrong, and what already guards against each. Most were written before the first real deployment; the ones that real runs actually hit are listed in [findings from the real runs](azure-deployment-stages.md#findings-from-the-real-runs). When one fires, the message names the fix.
 
 | # | Failure | Symptom | Guard |
 |---|---|---|---|
@@ -204,6 +204,7 @@ Fifty-one ways a first `scripts/azure-up.sh` goes wrong, and what already guards
 | 53 | Chat stops with "model has no price on file" | `COST_BUDGET_MODE=enforce` refuses a turn on a model with no price row | Azure reports the **deployment** name, so a deployment must be named after its model (the template does this); a custom name needs its own row in `config/pricing/models.yaml` |
 | 54 | The first chat turn takes tens of seconds | 429 retries in the specialists' logs | the deployment's TPM is too low; the small profile uses 100K for chat (10K gave 47 seconds to the first frame, 100K gave 2.5) |
 | 55 | `sanity.sh` fails the model check on a brand-new account (TLS error, then 401 or 403, then 404) | a Foundry account answers badly for a few minutes after creation | `sanity.sh` retries those for four minutes; if it still fails after that, read the status code in rows 45 and 46 |
+| 56 | `--build-from-source`: every image after the first fails in ACR Tasks | `failed to export image: failed to create image: failed to get layer sha256:...: layer does not exist`, then the postprovision hook fails | none yet; an ACR Tasks fault seen with the Python images, which share one Dockerfile and differ only in build arguments (November 2026). Workaround: build and push from your machine (`docker buildx build --platform linux/amd64 -f <dockerfile> --build-arg ... -t <registry>.azurecr.io/<name>:<tag> --push <context>` for each row of `scripts/azure/images.tsv`, after `az acr login --name <registry>`), then run `scripts/azure-up.sh --env <env> --image-source acr --image-tag <tag>`, which skips images already in the registry |
 
 Other things to try first: `az containerapp revision list --name ca-orchestrator --resource-group rg-<env> -o table` for revision health, `az containerapp logs show --name ca-orchestrator --resource-group rg-<env> --follow false`, and `azd env get-values` for what the hooks saw (it contains secrets; do not paste it).
 

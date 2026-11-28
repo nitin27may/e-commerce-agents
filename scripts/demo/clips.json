@@ -103,6 +103,40 @@
       "gif": "docs/images/evals.gif",
       "mp4_local": "docs/media/evals.mp4",
       "seconds": 24.0
+    },
+    {
+      "id": "azure",
+      "title": "Deploy to Azure in one command",
+      "caption": "scripts/azure-up.sh checks the subscription, generates secrets into Key Vault, provisions PostgreSQL, Foundry, a registry and Container Apps, prints the URL and demo accounts, and verifies the database, a keyless model call and a chat turn. A real run, sped up 40x, ids masked; the image build is not shown.",
+      "agents": [
+        "azd",
+        "Bicep",
+        "Azure Container Apps",
+        "Microsoft Foundry",
+        "PostgreSQL",
+        "Key Vault"
+      ],
+      "mermaid": null,
+      "alt": "Terminal recording of the one-command Azure deployment and the resource listing",
+      "gif": "docs/images/azure.gif",
+      "mp4_local": "docs/media/azure.mp4",
+      "seconds": 47.1
+    },
+    {
+      "id": "azure-app",
+      "title": "Live on Azure with a real model",
+      "caption": "The deployed store on Azure: the live gpt-4.1-mini model on Foundry, reached through the managed identity with no key, answers with a savings card and a stock card.",
+      "agents": [
+        "orchestrator",
+        "pricing-promotions",
+        "inventory-fulfillment",
+        "gpt-4.1-mini on Foundry"
+      ],
+      "mermaid": null,
+      "alt": "The storefront on Azure answering a deal-and-stock question with two cards",
+      "gif": "docs/images/azure-app.gif",
+      "mp4_local": "docs/media/azure-app.mp4",
+      "seconds": 64.7
     }
   ]
 }

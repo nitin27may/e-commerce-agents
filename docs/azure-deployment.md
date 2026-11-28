@@ -2,6 +2,16 @@
 
 One command deploys the whole demo to your own Azure subscription and prints the URL when it is ready. It was deployed and tested from a clean subscription: provisioned in about 8 minutes, URL and accounts printed at about 10 minutes, then a smoke test with a real model, a return approval and a database check.
 
+<p align="center">
+  <img src="images/azure.gif" alt="Terminal recording, sped up: azure-up.sh checks the subscription, generates secrets and provisions PostgreSQL, Foundry, Key Vault, a registry and Container Apps, prints the URL and demo accounts, and passes its checks; then the resource group and the running apps are listed" width="820"/>
+</p>
+<p align="center"><em>A real run, sped up 40x, with account ids masked by <code>scripts/demo/redact.sh</code>. It was built from source, and the image build is not shown.</em></p>
+
+<p align="center">
+  <img src="images/azure-app.gif" alt="The storefront on Azure: Alice asks whether the Sony WH-1000XM5 is a good deal and in stock, and the live model answers with a savings card and a stock card" width="820"/>
+</p>
+<p align="center"><em>The deployed store, answered by the live gpt-4.1-mini model on Foundry through the managed identity.</em></p>
+
 ```bash
 az login && azd auth login
 scripts/azure-up.sh                  # shows progress, then prints the URL, the accounts and what to try
@@ -65,8 +75,10 @@ flowchart LR
 | 1. Checks | Tools and sign-ins, resource providers, Postgres and model availability in the region, name collisions | under a minute |
 | 2. Secrets | Generates every secret once and reuses it on later runs | seconds |
 | 3. Provision | Creates everything above with `infra/main.bicep` | about 8 minutes |
-| 4. Smoke test | Starts the db-init job, then logs in, chats with the real model, and runs a return through approval | about 2 minutes |
-| 5. Done | Prints the URL, the accounts, two prompts to try, and the verify and teardown commands | |
+| 4. Smoke test | Starts the db-init job (migrate, seed, embed), then checks every app is healthy, sign-in works and the catalog is seeded | about 2 minutes |
+| 5. Done and verified | Prints the URL, the accounts, two prompts to try and the teardown command, then verifies: the database through the deployed path, one model call with no key, and one chat turn | under a minute |
+
+The full smoke test, `scripts/azure/smoke.sh` without `--quick`, adds a chat turn that must render a product card and a return that pauses for approval and is decided in the staff inbox.
 
 If a step fails, read the message, fix the cause and run the same command again: it is safe to repeat. Common first-run failures (region restrictions, model quota, role propagation) are in [troubleshooting](troubleshooting.md#azure-deployment-first-run-failure-catalogue).
 

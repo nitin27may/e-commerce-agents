@@ -173,8 +173,14 @@ scripts/azure-down.sh --env <env>    # removes everything and proves it
 
 No model key, no Docker, no secrets to create. The script checks your subscription (providers, region, model quota),
 generates the secrets into Key Vault, provisions Azure Container Apps, PostgreSQL with pgvector, a Microsoft Foundry
-chat and embedding model reached through managed identity, Log Analytics and a 10 USD budget, then runs a smoke test
-with a real model and a return through approval. It was deployed and tested from a clean subscription.
+chat and embedding model reached through managed identity, Log Analytics and a 10 USD budget, then checks the result:
+every app healthy, the database seeded, one model call with no key and one chat turn. It was deployed and tested from
+a clean subscription.
+
+<p align="center">
+  <img src="docs/images/azure.gif" alt="Terminal recording, sped up: azure-up.sh checks the subscription, provisions PostgreSQL, Foundry, Key Vault, a registry and Container Apps, prints the URL and demo accounts, passes its checks, then the resource group and running apps are listed" width="820"/>
+</p>
+<p align="center"><em>A real run, sped up 40x, ids masked. The same store then answers on Azure with the live model: <a href="docs/images/azure-app.gif">watch it</a>.</em></p>
 
 | | |
 |---|---|
