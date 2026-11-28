@@ -31,6 +31,23 @@ Needs `ffmpeg` and `gifski`, plus `vhs` for terminal clips (`brew install ffmpeg
 | Pacing | Typing at about 45 characters a second; SSE frames spaced 450 to 700 ms; a pause after each answer long enough to read it once | Workflow modes finish in 100 to 300 ms on the replay stack, which would flash past |
 | Terminal | vhs, 1280 x 800, Menlo 15, GitHub Dark | Readable at README width |
 
+## Azure clip
+
+The Azure clip is made from a real deployment's records, never live, so nothing in it can show more than the
+redaction allows:
+
+1. Deploy, saving a redacted, timestamped log:
+   `scripts/azure-up.sh --env eca-demo ... 2>&1 | scripts/demo/redact.sh | perl -MTime::HiRes=time -ne 'printf "%.3f\t%s", time, $_' > azure-up.log`
+   (`REDACT_WORDS` adds words to mask, such as your subscription name and home path.)
+2. While it is up, save the two listings the clip shows, through the same filter:
+   `az resource list -g rg-eca-demo --query "sort_by([].{Name:name, Type:type}, &Type)" -o table | scripts/demo/redact.sh > resources.txt`, and the same for
+   `az containerapp list` into `apps.txt` (the exact queries are in `tapes/azure.tape`).
+3. Tear down (`scripts/azure-down.sh --env eca-demo`), then record:
+   `AZURE_UP_LOG=azure-up.log AZ_RESOURCES=resources.txt AZ_APPS=apps.txt scripts/record-media.sh azure`.
+4. Check it: `REDACT_WORDS=... scripts/demo/check-frames.sh docs/images/azure.gif`.
+
+Type the command that actually ran into the tape: the clip shows it.
+
 ## Gotchas
 
 - **Unrecorded prompts.** The no-key stack answers only recorded prompts (`agents/python/demo/fixtures/manifest.json`). A new prompt is a replay miss until it is recorded ([replay mode](../../docs/replay-mode.md)), and the spec fails the take rather than record a miss.

@@ -178,9 +178,9 @@ every app healthy, the database seeded, one model call with no key and one chat 
 a clean subscription.
 
 <p align="center">
-  <img src="docs/images/azure.gif" alt="Terminal recording, sped up: azure-up.sh checks the subscription, provisions PostgreSQL, Foundry, Key Vault, a registry and Container Apps, prints the URL and demo accounts, passes its checks, then the resource group and running apps are listed" width="820"/>
+  <img src="docs/images/azure.gif" alt="Terminal recording, sped up: azure-up.sh checks the subscription, provisions PostgreSQL, Foundry, Key Vault and Container Apps, prints the URL and demo accounts, passes its checks, then the resource group and running apps are listed" width="820"/>
 </p>
-<p align="center"><em>A real run, sped up 40x, ids masked. The same store then answers on Azure with the live model: <a href="docs/images/azure-app.gif">watch it</a>.</em></p>
+<p align="center"><em>A real run, sped up 40x, ids masked. It was built from source (<code>--image-source acr --build-from-source</code>), hence the registry; the default pulls the published images. The same store then answers on Azure with the live model: <a href="docs/images/azure-app.gif">watch it</a>.</em></p>
 
 | | |
 |---|---|

@@ -107,7 +107,7 @@
     {
       "id": "azure",
       "title": "Deploy to Azure in one command",
-      "caption": "scripts/azure-up.sh checks the subscription, generates secrets into Key Vault, provisions PostgreSQL, Foundry, a registry and Container Apps, prints the URL and demo accounts, and verifies the database, a keyless model call and a chat turn. A real run, sped up 40x, ids masked; the image build is not shown.",
+      "caption": "A real run of scripts/azure-up.sh --env eca-demo --image-source acr --build-from-source, sped up 40x with ids masked: it checks the subscription, generates secrets into Key Vault, provisions PostgreSQL, Foundry, a container registry and Container Apps, prints the URL and demo accounts, and verifies the database, a keyless model call and a chat turn; then the resource group and the running apps are listed. The registry is there because this run built the branch's own images (the image build is not shown); the default command pulls the published images and creates no registry.",
       "agents": [
         "azd",
         "Bicep",
@@ -117,7 +117,7 @@
         "Key Vault"
       ],
       "mermaid": null,
-      "alt": "Terminal recording of the one-command Azure deployment and the resource listing",
+      "alt": "Terminal recording of an Azure deployment built from source, and the resource listing",
       "gif": "docs/images/azure.gif",
       "mp4_local": "docs/media/azure.mp4",
       "seconds": 47.1

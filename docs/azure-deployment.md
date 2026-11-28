@@ -3,9 +3,9 @@
 One command deploys the whole demo to your own Azure subscription and prints the URL when it is ready. It was deployed and tested from a clean subscription: provisioned in about 8 minutes, URL and accounts printed at about 10 minutes, then a smoke test with a real model, a return approval and a database check.
 
 <p align="center">
-  <img src="images/azure.gif" alt="Terminal recording, sped up: azure-up.sh checks the subscription, generates secrets and provisions PostgreSQL, Foundry, Key Vault, a registry and Container Apps, prints the URL and demo accounts, and passes its checks; then the resource group and the running apps are listed" width="820"/>
+  <img src="images/azure.gif" alt="Terminal recording, sped up: azure-up.sh, built from source, checks the subscription, generates secrets and provisions PostgreSQL, Foundry, Key Vault, a container registry and Container Apps, prints the URL and demo accounts, and passes its checks; then the resource group and the running apps are listed" width="820"/>
 </p>
-<p align="center"><em>A real run, sped up 40x, with account ids masked by <code>scripts/demo/redact.sh</code>. It was built from source, and the image build is not shown.</em></p>
+<p align="center"><em>A real run of <code>scripts/azure-up.sh --env eca-demo --image-source acr --build-from-source</code>, sped up 40x, with account ids masked by <code>scripts/demo/redact.sh</code>. Building from source adds a container registry and an image build (not shown); the default command pulls the published images instead.</em></p>
 
 <p align="center">
   <img src="images/azure-app.gif" alt="The storefront on Azure: Alice asks whether the Sony WH-1000XM5 is a good deal and in stock, and the live model answers with a savings card and a stock card" width="820"/>
